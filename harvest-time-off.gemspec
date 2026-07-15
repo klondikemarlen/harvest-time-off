@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata["source_code_uri"] = spec.homepage
 
-  spec.files = Dir["lib/**/*.rb", "bin/*", "harvest-time-off.rb"]
+  spec.files = Dir["lib/**/*.rb", "bin/*", "harvest-time-off.rb", "README.md"]
   spec.bindir = "bin"
   spec.executables = ["harvest-time-off"]
   spec.require_paths = ["lib"]
