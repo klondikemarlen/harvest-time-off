@@ -20,4 +20,6 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "harvest-api-v2", "~> 0.1"
+  spec.add_dependency "business_time", "~> 0.13"
+  spec.add_dependency "holidays", "~> 9.2"
 end
