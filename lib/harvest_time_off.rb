@@ -14,7 +14,7 @@ module HarvestTimeOff
     raise Error, "end date must not be before start date" if to < from
     raise Error, "at least one holiday region is required" if holiday_regions.empty?
 
-    holidays = Holidays.between(from, to, *(holiday_regions.map(&:to_sym) + [:observed])).map { |holiday| holiday[:date] }
+    holidays = Holidays.between(from, to, *(holiday_regions.map { |region| region.downcase.to_sym } + [:observed])).map { |holiday| holiday[:date] }
     dates = (from..to).to_a
     return dates.reject { |date| holidays.include?(date) } if include_weekends
 
@@ -89,8 +89,7 @@ module HarvestTimeOff
         opts.on("--task-id ID", Integer, "Harvest task ID") { |value| options[:task_id] = value }
         opts.on("--hours HOURS", Float, "Hours per day (default: 7)") { |value| options[:hours] = value }
         opts.on("--notes NOTES", "Optional note on every entry") { |value| options[:notes] = value }
-        opts.on("--include-weekends", "Create Saturday and Sunday entries too") { options[:include_weekends] = true }
-        opts.on("--holiday-region REGION", "Holidays region; repeat for each locality") { |value| options[:holiday_regions] << value }
+        opts.on("--holiday-region REGION", "Holidays region; repeat for each locality") { |value| options[:holiday_regions] << value.strip.downcase }
         opts.on("--dry-run", "Print entries without calling Harvest") { options[:dry_run] = true }
         opts.on("-h", "--help", "Show this help") do
           puts opts
@@ -113,7 +112,7 @@ module HarvestTimeOff
     end
 
     def self.holiday_regions_from_environment
-      ENV.fetch("HARVEST_HOLIDAY_REGIONS", "").split(",").map(&:strip).reject(&:empty?)
+      ENV.fetch("HARVEST_HOLIDAY_REGIONS", "").split(",").map { |region| region.strip.downcase }.reject(&:empty?)
     end
 
     def self.resolve_assignment(client, project_name, task_name)

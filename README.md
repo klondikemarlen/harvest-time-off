@@ -17,7 +17,7 @@ harvest-time-off 2026-08-17 2026-08-28 \
 
 ## OMP
 
-The linked OMP extension registers the approval-gated `harvest_time_off` tool. Its settings are:
+`--holiday-region` may be repeated to add to `HARVEST_HOLIDAY_REGIONS`. Regions use the [Holidays](https://github.com/holidays/holidays) identifiers, such as `ca_yt`; observed statutory holidays are excluded. The CLI uses `business_time` for weekday/workday calculation.
 
 - `defaultHours`: hours per business day when a tool call omits `hours`; defaults to `7`.
 - `holidayRegions`: comma-separated Holidays regions. Leave empty only when `HARVEST_HOLIDAY_REGIONS` is already set in OMP's environment.
