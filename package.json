@@ -1,0 +1,32 @@
+{
+  "name": "harvest-time-off",
+  "version": "0.1.0",
+  "description": "Harvest time-off CLI and OMP tool.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test:omp": "node --test test/omp-plugin.test.js"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "plugin",
+    "harvest",
+    "time-tracking"
+  ],
+  "omp": {
+    "extensions": [
+      "./index.js"
+    ],
+    "settings": {
+      "command": {
+        "type": "string",
+        "default": "harvest-time-off",
+        "description": "Direct path to the harvest-time-off executable; credentials stay in HARVEST_ACCESS_TOKEN and HARVEST_ACCOUNT_ID."
+      }
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

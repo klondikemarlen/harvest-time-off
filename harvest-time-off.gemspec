@@ -1,0 +1,23 @@
+# frozen_string_literal: true
+
+require_relative "lib/harvest_time_off/version"
+
+Gem::Specification.new do |spec|
+  spec.name = "harvest-time-off"
+  spec.version = HarvestTimeOff::VERSION
+  spec.authors = ["Marlen Brunner"]
+  spec.email = ["klondikemarlen@gmail.com"]
+  spec.summary = "Create Harvest time-off entries over a date range."
+  spec.homepage = "https://github.com/klondikemarlen/harvest-time-off"
+  spec.license = "MIT"
+  spec.required_ruby_version = ">= 3.2"
+
+  spec.metadata["source_code_uri"] = spec.homepage
+
+  spec.files = Dir["lib/**/*.rb", "bin/*", "harvest-time-off.rb"]
+  spec.bindir = "bin"
+  spec.executables = ["harvest-time-off"]
+  spec.require_paths = ["lib"]
+
+  spec.add_dependency "harvest-api-v2", "~> 0.1"
+end
