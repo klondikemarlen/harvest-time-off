@@ -38,10 +38,21 @@ A time-off block never creates weekend entries. The underlying [`marlens-harvest
 - `defaultHours`: hours per business day when a tool call omits `hours`; defaults to `7`.
 - `holidayRegions`: comma-separated Holidays regions; defaults to `ca_yt`.
 - `command`: direct path to the `harvest-time-off` executable.
+- `workEntryCommand`: direct path to the `harvest-work-entry` executable.
+- `projectTimeMappings`: JSON mapping from OMP Project Time project names to Harvest project/task names.
+- `projectTimeLogPath`: optional override for `~/.omp/project-time/time-log.json`.
 
 ## V2: OMP Project Time integration
 
-[Issue #3](https://github.com/klondikemarlen/harvest-time-off/issues/3) tracks the next scope: turn reviewed `omp-project-time` output into Harvest work entries with configured project/task mappings, generated descriptions, duplicate/lock checks, preview, and approval. V1 remains deliberately focused on time off.
+Configure `projectTimeMappings` with the recorded OMP Project Time project name as the key:
+
+```json
+{
+  "Harvest API": { "project": "Internal", "task": "Development" }
+}
+```
+
+`harvest_preview_project_time_entries` reads the configured time log, splits sessions across local dates, generates descriptions from the project and repository, and checks Harvest for existing or locked entries without writing. `harvest_record_project_time_entries` performs the same preflight then creates only new entries; OMP treats it as a write requiring approval. Unmapped sessions are reported and never written.
 
 ## Release
 
@@ -60,4 +71,5 @@ gem push harvest-time-off-<version>.gem
 omp plugin install --force github:klondikemarlen/harvest-time-off
 omp plugin list
 harvest-time-off --help
+harvest-work-entry --help
 ```

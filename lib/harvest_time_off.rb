@@ -132,3 +132,5 @@ module HarvestTimeOff
     end
   end
 end
+
+require "harvest_time_off/work_entry_cli"

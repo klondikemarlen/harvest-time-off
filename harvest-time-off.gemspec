@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.version = HarvestTimeOff::VERSION
   spec.authors = ["Marlen Brunner"]
   spec.email = ["klondikemarlen@gmail.com"]
-  spec.summary = "Create Harvest time-off entries over a date range."
+  spec.summary = "Create Harvest time-off and reviewed OMP Project Time entries."
   spec.homepage = "https://github.com/klondikemarlen/harvest-time-off"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2"
@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir["lib/**/*.rb", "bin/*", "harvest-time-off.rb", "README.md"]
   spec.bindir = "bin"
-  spec.executables = ["harvest-time-off"]
+  spec.executables = ["harvest-time-off", "harvest-work-entry"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "marlens-harvest-api-v2", "~> 0.1"

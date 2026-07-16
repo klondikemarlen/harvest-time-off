@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { loadProjectTimeEntries, parseProjectTimeMappings } from "./project-time.js"
 
 export function timeOffArguments({
   from,
@@ -36,6 +37,81 @@ export function runCommand(command, args, { cwd, signal } = {}) {
     child.once("close", code => finish(code))
     signal?.addEventListener("abort", abort, { once: true })
   })
+}
+
+export function workEntryArguments(entry, dryRun) {
+  const args = [
+    entry.spentDate,
+    "--project", entry.project,
+    "--task", entry.task,
+    "--hours", String(entry.hours),
+    "--notes", entry.notes,
+  ]
+  if (dryRun) args.push("--dry-run")
+  return args
+}
+
+export function createProjectTimeTool(
+  z,
+  {
+    command = "harvest-work-entry",
+    projectTimeMappings = "{}",
+    projectTimeLogPath = "",
+    run = runCommand,
+    loadEntries = loadProjectTimeEntries,
+  } = {},
+  { dryRun },
+) {
+  const operation = dryRun ? "Preview" : "Record"
+  return {
+    name: dryRun ? "harvest_preview_project_time_entries" : "harvest_record_project_time_entries",
+    label: `${operation} Harvest Project Time`,
+    description: `${operation} configured OMP Project Time sessions as Harvest work entries for an inclusive date range. Unmapped sessions and existing or locked Harvest entries are reported; recording requires approval.`,
+    approval: dryRun ? "read" : "write",
+    parameters: z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      try {
+        const mappings = parseProjectTimeMappings(projectTimeMappings)
+        const plan = await loadEntries({
+          from: params.from,
+          to: params.to,
+          mappings,
+          logPath: projectTimeLogPath || undefined,
+        })
+        if (plan.entries.length === 0) {
+          const unmapped = plan.unmapped ? ` ${plan.unmapped} unmapped session(s) were skipped.` : ""
+          return {
+            content: [{ type: "text", text: `No mapped OMP Project Time sessions found.${unmapped}` }],
+            details: { entries: [], unmapped: plan.unmapped },
+          }
+        }
+
+        onUpdate?.({ content: [{ type: "text", text: `${operation}ing ${plan.entries.length} Harvest work entr${plan.entries.length === 1 ? "y" : "ies"}…` }] })
+        const results = []
+        for (const entry of plan.entries) {
+          const result = await run(command, workEntryArguments(entry, dryRun), { cwd: ctx.cwd, signal })
+          results.push({ entry, ...result })
+        }
+        const output = results.map(result => {
+          if (result.spawnError) return `${result.entry.spentDate}: Could not run ${command}: ${result.spawnError.message}`
+          return [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || `${result.entry.spentDate}: ${command} exited with ${result.code}`
+        }).join("\n")
+        const unmapped = plan.unmapped ? `\nSkipped ${plan.unmapped} unmapped session(s).` : ""
+        return {
+          content: [{ type: "text", text: `${output}${unmapped}` }],
+          details: { entries: plan.entries, unmapped: plan.unmapped, results },
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Could not ${operation.toLowerCase()} OMP Project Time entries: ${error.message}` }],
+          details: { entries: [] },
+        }
+      }
+    },
+  }
 }
 
 export function createTimeOffTool(z, { command = "harvest-time-off", defaultHours = 7, holidayRegions = "", run = runCommand } = {}) {
@@ -81,4 +157,14 @@ export default function harvestTimeExtension(pi, options = {}) {
     defaultHours: options.defaultHours,
     holidayRegions: options.holidayRegions,
   }))
+  pi.registerTool(createProjectTimeTool(pi.zod.z, {
+    command: options.workEntryCommand,
+    projectTimeMappings: options.projectTimeMappings,
+    projectTimeLogPath: options.projectTimeLogPath,
+  }, { dryRun: true }))
+  pi.registerTool(createProjectTimeTool(pi.zod.z, {
+    command: options.workEntryCommand,
+    projectTimeMappings: options.projectTimeMappings,
+    projectTimeLogPath: options.projectTimeLogPath,
+  }, { dryRun: false }))
 }
