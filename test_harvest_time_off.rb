@@ -77,15 +77,70 @@ class HarvestTimeOffTest < Minitest::Test
     assert_includes output.string, "Created 2026-07-17: 7.5h (entry #1)"
   end
 
-  class FakeClient
-    attr_reader :entries
+  def test_work_entry_preview_checks_existing_entries_before_proposing_write
+    client = FakeClient.new
+    output = StringIO.new
+    error = StringIO.new
 
-    def initialize
+    status = HarvestTimeOff::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API", "--dry-run"],
+      output:,
+      error:,
+      client:
+    )
+
+    assert_equal 0, status
+    assert_equal "", error.string
+    assert_includes output.string, "Would create 2026-07-17: 2.25h"
+    assert_equal [{ method: :get, path: "/v2/time_entries", params: { project_id: 48_730_683, task_id: 8_083_365, from: "2026-07-17", to: "2026-07-17" } }], client.requests
+  end
+
+  def test_work_entry_skips_locked_existing_entry
+    client = FakeClient.new(existing_entries: [{ "is_locked" => true }])
+    output = StringIO.new
+
+    status = HarvestTimeOff::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API"],
+      output:,
+      client:
+    )
+
+    assert_equal HarvestTimeOff::WorkEntryCLI::LOCKED_ENTRY, status
+    assert_equal "Locked existing Harvest entry on 2026-07-17; skipped\n", output.string
+    assert_empty client.entries
+  end
+
+  def test_work_entry_skips_existing_unlocked_entry
+    client = FakeClient.new(existing_entries: [{ "is_locked" => false }])
+    output = StringIO.new
+
+    status = HarvestTimeOff::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API"],
+      output:,
+      client:
+    )
+
+    assert_equal HarvestTimeOff::WorkEntryCLI::EXISTING_ENTRY, status
+    assert_equal "Existing Harvest entry on 2026-07-17; skipped\n", output.string
+    assert_empty client.entries
+  end
+
+  class FakeClient
+    attr_reader :entries, :requests
+
+    def initialize(existing_entries: [])
       @entries = []
+      @existing_entries = existing_entries
+      @requests = []
     end
 
     def active_task_assignments
       [{ "project" => { "id" => 48_730_683, "name" => "Time Off - Marlen" }, "task" => { "id" => 8_083_365, "name" => "Vacation / PTO" } }]
+    end
+
+    def request(method, path, params:)
+      @requests << { method:, path:, params: }
+      { "time_entries" => @existing_entries }
     end
 
     def create_time_entry(**entry)

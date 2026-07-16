@@ -1,11 +1,11 @@
 {
   "name": "harvest-time-off",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Harvest time-off CLI and OMP tool.",
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test:omp": "node --test test/omp-plugin.test.js"
+    "test:omp": "node --test test/*.test.js"
   },
   "keywords": [
     "omp",
@@ -34,6 +34,21 @@
         "type": "string",
         "default": "harvest-time-off",
         "description": "Direct path to the harvest-time-off executable; credentials stay in HARVEST_ACCESS_TOKEN and HARVEST_ACCOUNT_ID."
+      },
+      "workEntryCommand": {
+        "type": "string",
+        "default": "harvest-work-entry",
+        "description": "Direct path to the Harvest work-entry executable."
+      },
+      "projectTimeMappings": {
+        "type": "string",
+        "default": "{}",
+        "description": "JSON mapping from OMP Project Time project names to Harvest project and task names."
+      },
+      "projectTimeLogPath": {
+        "type": "string",
+        "default": "",
+        "description": "Optional path to OMP Project Time's time-log.json; defaults to ~/.omp/project-time/time-log.json."
       }
     }
   },
