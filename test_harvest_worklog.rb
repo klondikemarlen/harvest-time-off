@@ -83,8 +83,8 @@ class HarvestWorklogTest < Minitest::Test
     output = StringIO.new
     error = StringIO.new
 
-    status = HarvestWorklog::WorkEntryCLI.run(
-      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API", "--dry-run"],
+    status = HarvestWorklog::CLI.run(
+      ["work-entry", "2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API", "--dry-run"],
       output:,
       error:,
       client:

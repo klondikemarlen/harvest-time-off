@@ -17,7 +17,7 @@ module HarvestWorklog
     holidays = Holidays.between(from, to, *(holiday_regions.map { |region| region.downcase.to_sym } + [:observed])).map { |holiday| holiday[:date] }
     (from..to).select { |date| date.workday?(holidays:) }
   rescue Holidays::InvalidRegion
-    raise Error, "invalid holiday region: #{holiday_regions.join(", ")}" 
+    raise Error, "invalid holiday region: #{holiday_regions.join(", ")}"
   end
 
   def display_hours(hours)
