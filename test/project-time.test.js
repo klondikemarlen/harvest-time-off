@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { createProjectTimeTool } from "../index.js"
+import { createProjectTimeTool, workEntryArguments } from "../index.js"
 import { parseProjectTimeMappings, projectTimeEntries } from "../project-time.js"
 
 const schema = () => ({
@@ -72,4 +72,8 @@ test("previews mapped Project Time entries without writing", async () => {
 
   const record = createProjectTimeTool(z, {}, { dryRun: false })
   assert.equal(record.approval, "write")
+  assert.deepEqual(
+    workEntryArguments({ spentDate: "2026-07-17", project: "Internal", task: "Development", hours: 1.25, notes: "OMP Project Time: Harvest API (repo)" }, false),
+    ["2026-07-17", "--project", "Internal", "--task", "Development", "--hours", "1.25", "--notes", "OMP Project Time: Harvest API (repo)"],
+  )
 })

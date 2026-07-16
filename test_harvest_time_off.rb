@@ -110,6 +110,21 @@ class HarvestTimeOffTest < Minitest::Test
     assert_empty client.entries
   end
 
+  def test_work_entry_skips_existing_unlocked_entry
+    client = FakeClient.new(existing_entries: [{ "is_locked" => false }])
+    output = StringIO.new
+
+    status = HarvestTimeOff::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time: Harvest API"],
+      output:,
+      client:
+    )
+
+    assert_equal HarvestTimeOff::WorkEntryCLI::EXISTING_ENTRY, status
+    assert_equal "Existing Harvest entry on 2026-07-17; skipped\n", output.string
+    assert_empty client.entries
+  end
+
   class FakeClient
     attr_reader :entries, :requests
 
