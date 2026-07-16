@@ -34,11 +34,13 @@ module HarvestWorklog
         TimeOffCLI.run(command_arguments, output:, error:, client:)
       when "work-entry"
         WorkEntryCLI.run(command_arguments, output:, error:, client:)
+      when "aggregate"
+        AggregateCLI.run(command_arguments, output:, error:, client:)
       when "-h", "--help"
         output.puts usage
         0
       else
-        error.puts "Error: choose time-off or work-entry"
+        error.puts "Error: choose time-off, work-entry, or aggregate"
         error.puts usage
         1
       end
@@ -49,10 +51,12 @@ module HarvestWorklog
         Usage:
           harvest-worklog time-off FROM TO --project NAME --task NAME [options]
           harvest-worklog work-entry DATE --project NAME --task NAME --hours HOURS --notes NOTES [options]
+          harvest-worklog aggregate FROM TO [--project NAME] [--task NAME]
 
         Commands:
           time-off    Create one entry per local business day in a date range.
           work-entry  Create one reviewed ordinary-work entry.
+          aggregate   Read time-entry totals without writing Harvest records.
       USAGE
     end
   end
@@ -165,3 +169,4 @@ module HarvestWorklog
 end
 
 require "harvest_worklog/work_entry_cli"
+require "harvest_worklog/aggregate_cli"

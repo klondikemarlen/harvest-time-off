@@ -126,6 +126,72 @@ class HarvestWorklogTest < Minitest::Test
     assert_empty client.entries
   end
 
+  def test_aggregate_cli_paginates_filters_and_shows_empty_dates
+    client = AggregateClient.new(
+      [
+        {
+          "time_entries" => [
+            { "spent_date" => "2026-07-17", "hours" => 7, "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } },
+            { "spent_date" => "2026-07-19", "hours" => 1.5, "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } },
+            { "spent_date" => "2026-07-17", "hours" => 0.5, "project" => { "name" => "WRAP" }, "task" => { "name" => "Meeting" } }
+          ],
+          "next_page" => 2
+        },
+        {
+          "time_entries" => [
+            { "spent_date" => "2026-07-18", "hours" => 2, "project" => { "name" => "Travel" }, "task" => { "name" => "Programming" } }
+          ],
+          "next_page" => nil
+        }
+      ]
+    )
+    output = StringIO.new
+
+    status = HarvestWorklog::CLI.run(
+      ["aggregate", "2026-07-17", "2026-07-19", "--project", "WRAP", "--task", "Programming"],
+      output:,
+      client:
+    )
+
+    assert_equal 0, status
+    assert_equal(
+      [
+        { method: :get, path: "/v2/time_entries", params: { from: "2026-07-17", to: "2026-07-19", page: 1, per_page: 100 } },
+        { method: :get, path: "/v2/time_entries", params: { from: "2026-07-17", to: "2026-07-19", page: 2, per_page: 100 } }
+      ],
+      client.requests
+    )
+    assert_equal <<~OUTPUT, output.string
+      2 entries, 8.5h from 2026-07-17 through 2026-07-19
+      By date:
+        2026-07-17: 1 entry, 7h
+        2026-07-18: 0 entries, 0h
+        2026-07-19: 1 entry, 1.5h
+      By project/task:
+        WRAP / Programming: 2 entries, 8.5h
+    OUTPUT
+  end
+
+  def test_aggregate_cli_reports_empty_range
+    output = StringIO.new
+
+    status = HarvestWorklog::CLI.run(
+      ["aggregate", "2026-07-18", "2026-07-19"],
+      output:,
+      client: AggregateClient.new([{ "time_entries" => [], "next_page" => nil }])
+    )
+
+    assert_equal 0, status
+    assert_equal <<~OUTPUT, output.string
+      0 entries, 0h from 2026-07-18 through 2026-07-19
+      By date:
+        2026-07-18: 0 entries, 0h
+        2026-07-19: 0 entries, 0h
+      By project/task:
+        none
+    OUTPUT
+  end
+
   class FakeClient
     attr_reader :assignment_source, :entries, :requests
 
@@ -148,6 +214,20 @@ class HarvestWorklogTest < Minitest::Test
     def create_time_entry(**entry)
       @entries << entry
       { "id" => @entries.length }
+    end
+  end
+
+  class AggregateClient
+    attr_reader :requests
+
+    def initialize(pages)
+      @pages = pages
+      @requests = []
+    end
+
+    def request(method, path, params:)
+      @requests << { method:, path:, params: }
+      @pages.fetch(params.fetch(:page) - 1)
     end
   end
 end

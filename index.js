@@ -52,6 +52,13 @@ export function workEntryArguments(entry, dryRun) {
   return args
 }
 
+export function aggregateArguments({ from, to, project, task }) {
+  const args = ["aggregate", from, to]
+  if (project) args.push("--project", project)
+  if (task) args.push("--task", task)
+  return args
+}
+
 export function createProjectTimeTool(
   z,
   {
@@ -115,6 +122,39 @@ export function createProjectTimeTool(
   }
 }
 
+export function createTimeAggregateTool(z, { command = "harvest-worklog", run = runCommand } = {}) {
+  return {
+    name: "harvest_time_aggregates",
+    label: "View Harvest Time Aggregates",
+    description: "Read Harvest time-entry totals for an inclusive date range, grouped by date and project/task. This does not write Harvest records.",
+    approval: "read",
+    parameters: z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+      project: z.string().min(1).optional(),
+      task: z.string().min(1).optional(),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const args = aggregateArguments(params)
+      onUpdate?.({ content: [{ type: "text", text: "Reading Harvest time aggregates…" }] })
+      const result = await run(command, args, { cwd: ctx.cwd, signal })
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
+
+      if (result.spawnError) {
+        return {
+          content: [{ type: "text", text: `Could not run ${command}: ${result.spawnError.message}` }],
+          details: { command, args, code: result.code },
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: output || `${command} exited with ${result.code}` }],
+        details: { command, args, code: result.code },
+      }
+    },
+  }
+}
+
 export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours = 7, holidayRegions = "", run = runCommand } = {}) {
   return {
     name: "harvest_record_time_off",
@@ -153,6 +193,7 @@ export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours
 
 export default function harvestTimeExtension(pi, options = {}) {
   pi.setLabel?.("Harvest Worklog")
+  pi.registerTool(createTimeAggregateTool(pi.zod.z, { command: options.command }))
   pi.registerTool(createTimeOffTool(pi.zod.z, {
     command: options.command,
     defaultHours: options.defaultHours,

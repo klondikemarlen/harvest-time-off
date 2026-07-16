@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { createTimeOffTool, timeOffArguments } from "../index.js"
+import { aggregateArguments, createTimeAggregateTool, createTimeOffTool, timeOffArguments } from "../index.js"
 
 const schema = () => ({
   regex() { return this },
@@ -33,6 +33,37 @@ test("builds a safe CLI argument vector", () => {
       "--hours", "7.5", "--notes", "Vacation", "--dry-run",
     ],
   )
+})
+
+test("registers a read-only aggregate tool", async () => {
+  const calls = []
+  const tool = createTimeAggregateTool(z, {
+    command: "harvest-worklog",
+    run: async (...args) => {
+      calls.push(args)
+      return { code: 0, stdout: "2 entries, 8.5h", stderr: "" }
+    },
+  })
+
+  const result = await tool.execute(
+    "call-aggregate",
+    { from: "2026-07-17", to: "2026-07-19", project: "WRAP", task: "Programming" },
+    undefined,
+    undefined,
+    { cwd: "/tmp" },
+  )
+
+  assert.equal(tool.approval, "read")
+  assert.deepEqual(
+    aggregateArguments({ from: "2026-07-17", to: "2026-07-19", project: "WRAP", task: "Programming" }),
+    ["aggregate", "2026-07-17", "2026-07-19", "--project", "WRAP", "--task", "Programming"],
+  )
+  assert.deepEqual(calls, [[
+    "harvest-worklog",
+    ["aggregate", "2026-07-17", "2026-07-19", "--project", "WRAP", "--task", "Programming"],
+    { cwd: "/tmp", signal: undefined },
+  ]])
+  assert.equal(result.content[0].text, "2 entries, 8.5h")
 })
 
 test("registers an approval-gated OMP write tool", async () => {
