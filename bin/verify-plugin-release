@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
-version="$(ruby -Ilib -rharvest_worklog/version -e 'puts HarvestWorklog::VERSION')"
+version="$(node -p 'require("./package.json").version')"
 
 omp plugin uninstall harvest-worklog
 omp plugin install --force github:klondikemarlen/harvest-worklog
