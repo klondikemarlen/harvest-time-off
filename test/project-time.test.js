@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { createProjectTimeTool, createProjectTimeTransformTool, workEntryArguments } from "../index.js"
-import { formatProjectTimeTimesheet, parseProjectTimeMappings, projectTimeEntries, projectTimeTransform, projectTimeWeek, resolveProjectTimeDate } from "../project-time.js"
+import { formatProjectTimeTimesheet, parseProjectTimeMappings, projectTimeEntries, projectTimeTransform, resolveProjectTimeDate } from "../project-time.js"
 
 const schema = () => ({
   regex() { return this },
@@ -38,26 +38,26 @@ test("normalizes and validates Project Time mapping settings", () => {
   )
 })
 
-test("formats local human and agent times without Harvest mappings", () => {
+test("formats daily human activities as Harvest-style notes", () => {
   const plan = {
     groups: [
-      { spentDate: "2026-07-20", sourceKind: "human_active", milliseconds: 24_040_000 },
-      { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", milliseconds: 1_789_000 },
-      { spentDate: "2026-07-21", sourceKind: "human_active", milliseconds: 7_200_000 },
+      { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Fix test suite", milliseconds: 24_040_000 },
+      { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", activity: "Fix test suite", milliseconds: 1_789_000 },
+      { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Prototype template v3 UI", milliseconds: 300_000 },
+      { spentDate: "2026-07-21", sourceKind: "human_active", activity: "Tomorrow", milliseconds: 7_200_000 },
     ],
   }
 
   assert.equal(
-    formatProjectTimeTimesheet(plan, { project: "wrap", spentDate: "2026-07-20" }),
-    "wrap · Week of Mon, Jul 20–Sun, Jul 26\n\nMon 6:40 · Tue 2:00 · Wed 0:00 · Thu 0:00 · Fri 0:00 · Sat 0:00 · Sun 0:00\n\nMon, Jul 20\nHuman active · 6h 40m 40s\nAgent elapsed · 29m 49s",
+    formatProjectTimeTimesheet(plan, { project: "wrap", spentDate: "2026-07-20", mapping: { project: "WRAP (YG - SIS)", task: "Programming" } }),
+    "WRAP (YG - SIS) · Mon, Jul 20 · 6:45\n\nProgramming\n- Fix test suite\n- Prototype template v3 UI",
   )
   assert.equal(resolveProjectTimeDate("today", new Date(2026, 6, 20, 12)), "2026-07-20")
-  assert.deepEqual(projectTimeWeek("2026-08-02"), { from: "2026-07-27", to: "2026-08-02" })
   assert.equal(resolveProjectTimeDate("yesterday", new Date(2026, 6, 20, 12)), "2026-07-19")
   assert.throws(() => resolveProjectTimeDate("2026-02-31"), /valid local date/)
   assert.equal(
     formatProjectTimeTimesheet({ groups: [] }, { project: "WRAP", spentDate: "2026-07-20" }),
-    "WRAP · Week of Mon, Jul 20–Sun, Jul 26\n\nMon 0:00 · Tue 0:00 · Wed 0:00 · Thu 0:00 · Fri 0:00 · Sat 0:00 · Sun 0:00\n\nMon, Jul 20\nNo local Project Time sessions found for WRAP on 2026-07-20.",
+    "WRAP · Mon, Jul 20 · 0:00\n\nActivities\nNo local Project Time sessions found for WRAP on 2026-07-20.",
   )
 })
 

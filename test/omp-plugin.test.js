@@ -257,15 +257,15 @@ test("registers autocomplete and reads local Project Time for slash timesheets",
     sendMessage(message, options) { messages.push({ message, options }) },
   }, {
     command: " ",
-    projectTimeMappings: " ",
+    projectTimeMappings: '{"wrap":{"project":"WRAP (YG - SIS)","task":"Programming"}}',
     projectTimeLogPath: " /tmp/project-time.json ",
     loadProjectTimeTransform: async options => {
       loads.push(options)
       return {
         groups: [
-          { spentDate: "2026-07-20", sourceKind: "human_active", milliseconds: 24_040_000 },
-          { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", milliseconds: 1_789_000 },
-          { spentDate: "2026-07-21", sourceKind: "human_active", milliseconds: 7_200_000 },
+          { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Fix test suite", milliseconds: 24_040_000 },
+          { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", activity: "Fix test suite", milliseconds: 1_789_000 },
+          { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Prototype template v3 UI", milliseconds: 300_000 },
         ],
       }
     },
@@ -288,13 +288,13 @@ test("registers autocomplete and reads local Project Time for slash timesheets",
   await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
   assert.deepEqual(loads, [{
     from: "2026-07-20",
-    to: "2026-07-26",
+    to: "2026-07-20",
     project: "wrap",
     mappings: new Map(),
     logPath: "/tmp/project-time.json",
   }])
   assert.equal(calls.length, 0)
-  assert.equal(messages[0].message.content, "wrap · Week of Mon, Jul 20–Sun, Jul 26\n\nMon 6:40 · Tue 2:00 · Wed 0:00 · Thu 0:00 · Fri 0:00 · Sat 0:00 · Sun 0:00\n\nMon, Jul 20\nHuman active · 6h 40m 40s\nAgent elapsed · 29m 49s")
+  assert.equal(messages[0].message.content, "WRAP (YG - SIS) · Mon, Jul 20 · 6:45\n\nProgramming\n- Fix test suite\n- Prototype template v3 UI")
 
   await command.handler("time-off --help", { cwd: "/tmp", ui })
   assert.equal(calls.length, 0)

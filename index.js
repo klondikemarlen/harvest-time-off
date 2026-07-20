@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { formatProjectTimeTimesheet, loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings, projectTimeWeek, resolveProjectTimeDate } from "./project-time.js"
+import { formatProjectTimeTimesheet, loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings, resolveProjectTimeDate } from "./project-time.js"
 
 function normalizeHolidayRegions(regions) {
   return [...new Set(regions.map(region => region.trim().toLowerCase()).filter(Boolean))]
@@ -497,16 +497,17 @@ export default function harvestTimeExtension(pi, options = {}) {
       try {
         const spentDate = resolveProjectTimeDate(parsed.argv[1])
         const project = parsed.argv[3]
-        const week = projectTimeWeek(spentDate)
+        const mapping = parseProjectTimeMappings(projectTimeMappings).get(project)
         const plan = await loadTransform({
-          ...week,
+          from: spentDate,
+          to: spentDate,
           project,
           mappings: new Map(),
           logPath: projectTimeLogPath || undefined,
         })
         pi.sendMessage({
           customType: "harvest-worklog-timesheet",
-          content: formatProjectTimeTimesheet(plan, { project, spentDate }),
+          content: formatProjectTimeTimesheet(plan, { project, spentDate, mapping }),
           display: true,
           attribution: "assistant",
         }, { triggerTurn: false })

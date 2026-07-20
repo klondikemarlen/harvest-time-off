@@ -187,48 +187,15 @@ export function resolveProjectTimeDate(value, today = new Date()) {
   }
   return value
 }
-export function projectTimeWeek(spentDate) {
-  const from = dateFromIso(spentDate)
-  from.setDate(from.getDate() - ((from.getDay() + 6) % 7))
-  const to = new Date(from)
-  to.setDate(to.getDate() + 6)
-  return { from: localDate(from), to: localDate(to) }
-}
+export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping }) {
+  const [year, month, day] = spentDate.split("-").map(Number)
+  const groups = plan.groups.filter(group => group.spentDate === spentDate && group.sourceKind === "human_active")
+  const heading = `${mapping?.project ?? project} · ${formatShortDate(new Date(year, month - 1, day))} · ${formatDayTotal(groups.reduce((total, group) => total + group.milliseconds, 0))}`
+  const task = mapping?.task ?? "Activities"
+  const activities = [...new Set(groups.map(group => group.activity || "Unlabelled"))]
 
-export function formatProjectTimeTimesheet(plan, { project, spentDate }) {
-  const { from, to } = projectTimeWeek(spentDate)
-  const weeklyTotals = new Map()
-  const selectedTotals = new Map([["human_active", 0], ["agent_turn_elapsed", 0]])
-  for (const group of plan.groups) {
-    if (group.sourceKind === "human_active") weeklyTotals.set(group.spentDate, (weeklyTotals.get(group.spentDate) ?? 0) + group.milliseconds)
-    if (group.spentDate === spentDate && selectedTotals.has(group.sourceKind)) {
-      selectedTotals.set(group.sourceKind, selectedTotals.get(group.sourceKind) + group.milliseconds)
-    }
-  }
-
-  const start = dateFromIso(from)
-  const dates = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(start)
-    date.setDate(date.getDate() + offset)
-    return localDate(date)
-  })
-  const week = dates.map(date => `${formatShortDate(dateFromIso(date)).slice(0, 3)} ${formatDayTotal(weeklyTotals.get(date) ?? 0)}`).join(" · ")
-  const detail = selectedTotals.get("human_active") + selectedTotals.get("agent_turn_elapsed") === 0
-    ? `No local Project Time sessions found for ${project} on ${spentDate}.`
-    : `Human active · ${formatDuration(selectedTotals.get("human_active"))}\nAgent elapsed · ${formatDuration(selectedTotals.get("agent_turn_elapsed"))}`
-  return [
-    `${project} · Week of ${formatShortDate(start)}–${formatShortDate(dateFromIso(to))}`,
-    "",
-    week,
-    "",
-    formatShortDate(dateFromIso(spentDate)),
-    detail,
-  ].join("\n")
-}
-
-function dateFromIso(value) {
-  const [year, month, day] = value.split("-").map(Number)
-  return new Date(year, month - 1, day)
+  if (activities.length === 0) return `${heading}\n\n${task}\nNo local Project Time sessions found for ${project} on ${spentDate}.`
+  return [heading, "", task, ...activities.map(activity => `- ${activity}`)].join("\n")
 }
 
 function formatShortDate(date) {
@@ -236,17 +203,8 @@ function formatShortDate(date) {
 }
 
 function formatDayTotal(milliseconds) {
-  const minutes = Math.floor(Math.max(0, milliseconds) / 60_000)
+  const minutes = Math.floor(milliseconds / 60_000)
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`
-}
-
-function formatDuration(milliseconds) {
-  let seconds = Math.floor(Math.max(0, milliseconds) / 1000)
-  const hours = Math.floor(seconds / 3600)
-  seconds %= 3600
-  const minutes = Math.floor(seconds / 60)
-  seconds %= 60
-  return [hours && `${hours}h`, (hours || minutes) && `${minutes}m`, `${seconds}s`].filter(Boolean).join(" ")
 }
 
 function mappedEntries(groups, mappings, unmapped) {
