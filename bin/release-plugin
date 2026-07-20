@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+omp plugin uninstall harvest-worklog
+omp plugin install --force github:klondikemarlen/harvest-worklog
