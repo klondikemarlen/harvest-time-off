@@ -200,6 +200,7 @@ test("completes the explicit timesheet hierarchy contextually", () => {
   const dates = harvestWorklogArgumentCompletions("timesheet ")
   assert.deepEqual(dates.slice(0, 2).map(item => item.value), ["timesheet today", "timesheet yesterday"])
   assert.match(dates[2].value, /^timesheet \d{4}-\d{2}-\d{2}$/)
+  assert.deepEqual(harvestWorklogArgumentCompletions("timesheet"), dates)
   assert.deepEqual(harvestWorklogArgumentCompletions("timesheet t").map(item => item.value), ["timesheet today"])
   assert.deepEqual(
     harvestWorklogArgumentCompletions("timesheet today ").map(item => item.value),
