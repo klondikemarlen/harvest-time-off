@@ -62,7 +62,7 @@ harvest-worklog aggregate 2026-07-17 2026-07-19 \
 
 The `harvest_time_aggregates` OMP tool exposes the same optional filters and is approval-gated as a read.
 
-### Daily timesheets
+### Timesheets
 
 The CLI `timesheet` command and `harvest_time_sheet` OMP tool read the authenticated user's compact daily Harvest view. They show task totals, entry durations, and notes already recorded in Harvest.
 
@@ -70,8 +70,8 @@ The CLI `timesheet` command and `harvest_time_sheet` OMP tool read the authentic
 harvest-worklog timesheet today --project WRAP
 ```
 
-The `/harvest-worklog timesheet today --project wrap` slash command instead reads local OMP Project Time and reports separate `Human active` and `Agent elapsed` totals. It does not call Harvest or require `projectTimeMappings`; mappings remain specific to previewing or recording Harvest entries.
-`/project-time history` reports all logged dates, so its totals can be larger than a single-day timesheet.
+The `/harvest-worklog timesheet today --project wrap` slash command instead reads a Monday–Sunday local OMP Project Time week. It presents daily `Human active` totals in a Harvest-like row and expands the requested day with separate `Human active` and `Agent elapsed` totals. It does not call Harvest, upload entries, or require `projectTimeMappings`; mappings remain specific to previewing or recording Harvest entries.
+`/project-time history` reports all logged dates, so its totals can be larger than the displayed week.
 
 Type `/harvest-worklog ` in OMP to discover `timesheet`, then select `today`, `yesterday`, or an ISO date before the contextual `--project` option. The editable project name must exactly match the case-sensitive local Project Time name.
 
