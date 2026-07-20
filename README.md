@@ -64,15 +64,16 @@ The `harvest_time_aggregates` OMP tool exposes the same optional filters and is 
 
 ### Daily timesheets
 
-The `timesheet` command reads the authenticated user's compact daily Harvest view: task totals, entry durations when a task has multiple entries, and multiline notes. `DATE` accepts `today`, `yesterday`, or an ISO date in the CLI's local timezone.
+The CLI `timesheet` command and `harvest_time_sheet` OMP tool read the authenticated user's compact daily Harvest view. They show task totals, entry durations, and notes already recorded in Harvest.
 
 ```bash
 harvest-worklog timesheet today --project WRAP
 ```
 
-OMP exposes the same CLI-only path through `/harvest-worklog timesheet today --project WRAP` and the read-only `harvest_time_sheet` tool. The wrapper never calls Harvest directly. A later, separate feature may upload reviewed content through the Harvest API; keep that write path separate from this read-only formatter.
+The `/harvest-worklog timesheet today --project wrap` slash command instead reads local OMP Project Time and reports separate `Human active` and `Agent elapsed` totals. It does not call Harvest or require `projectTimeMappings`; mappings remain specific to previewing or recording Harvest entries.
+`/project-time history` reports all logged dates, so its totals can be larger than a single-day timesheet.
 
-Type `/harvest-worklog ` in OMP to discover `timesheet`, then select `today`, `yesterday`, or an ISO date before the contextual `--project` and `--task` options. Completion keeps filter values as editable text, and the slash command delegates the selected timesheet argument vector to the CLI.
+Type `/harvest-worklog ` in OMP to discover `timesheet`, then select `today`, `yesterday`, or an ISO date before the contextual `--project` option. The editable project name must exactly match the case-sensitive local Project Time name.
 
 ## OMP settings
 
