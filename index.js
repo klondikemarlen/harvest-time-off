@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings } from "./project-time.js"
+import { formatProjectTimeTimesheet, loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings, resolveProjectTimeDate } from "./project-time.js"
 
 function normalizeHolidayRegions(regions) {
   return [...new Set(regions.map(region => region.trim().toLowerCase()).filter(Boolean))]
@@ -337,7 +337,7 @@ export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours
 
 const HARVEST_WORKLOG_USAGE = [
   "Usage:",
-  "  /harvest-worklog timesheet DATE --project PROJECT [--task TASK]",
+  "  /harvest-worklog timesheet DATE --project PROJECT",
   "",
   "DATE: today, yesterday, or YYYY-MM-DD",
 ].join("\n")
@@ -356,9 +356,8 @@ function dateCompletions() {
 const DATE_PATTERN = /^(today|yesterday|\d{4}-\d{2}-\d{2})$/i
 
 const TIMESHEET_FLAGS = {
-  "--project": "Exact Harvest project name",
-  "--task": "Optional exact Harvest task name",
-  "--help": "Show timesheet CLI help",
+  "--project": "Exact OMP Project Time project name",
+  "--help": "Show local Project Time timesheet help",
 }
 
 export function harvestWorklogArgumentCompletions(argumentPrefix) {
@@ -395,10 +394,8 @@ export function harvestWorklogArgumentCompletions(argumentPrefix) {
   if (positionals.length !== 1 || !DATE_PATTERN.test(positionals[0])) return null
 
   const flags = !words.includes("--project")
-    ? { "--project": TIMESHEET_FLAGS["--project"], "--help": TIMESHEET_FLAGS["--help"] }
-    : hasFlagValue(words, "--project")
-      ? { "--task": TIMESHEET_FLAGS["--task"], "--help": TIMESHEET_FLAGS["--help"] }
-      : { "--help": TIMESHEET_FLAGS["--help"] }
+    ? TIMESHEET_FLAGS
+    : { "--help": TIMESHEET_FLAGS["--help"] }
   return completionForFlag(input, flags)
 }
 
@@ -465,8 +462,7 @@ function isTimesheetForm(words, allowIncomplete = false) {
   if (!DATE_PATTERN.test(words[1])) return false
   if (allowIncomplete && words.length === 2) return true
   if (words[2] !== "--project" || !words[3] || words[3].startsWith("--")) return false
-  if (words.length === 4) return true
-  return words.length === 6 && words[4] === "--task" && Boolean(words[5]) && !words[5].startsWith("--")
+  return words.length === 4
 }
 
 export function parseHarvestWorklogArguments(args) {
@@ -477,7 +473,8 @@ export function parseHarvestWorklogArguments(args) {
   if (!words || words.length === 0) return null
   const help = ["--help", "-h"].includes(words.at(-1))
   const form = help ? words.slice(0, -1) : words
-  return isTimesheetForm(form, help) ? { argv: words } : null
+  if (!isTimesheetForm(form, help)) return null
+  return help ? { help: true } : { argv: words }
 }
 
 export default function harvestTimeExtension(pi, options = {}) {
@@ -486,8 +483,9 @@ export default function harvestTimeExtension(pi, options = {}) {
   const run = options.run ?? runCommand
   const projectTimeMappings = options.projectTimeMappings?.trim() || "{}"
   const projectTimeLogPath = options.projectTimeLogPath?.trim() || ""
+  const loadTransform = options.loadProjectTimeTransform ?? loadProjectTimeTransform
   pi.registerCommand("harvest-worklog", {
-    description: "Show one project's daily Harvest timesheet",
+    description: "Show one project's local OMP Project Time",
     getArgumentCompletions: harvestWorklogArgumentCompletions,
     handler: async (args, ctx) => {
       const parsed = parseHarvestWorklogArguments(args)
@@ -496,14 +494,25 @@ export default function harvestTimeExtension(pi, options = {}) {
         return
       }
 
-      const result = await run(command, parsed.argv, { cwd: ctx.cwd })
-      if (result.spawnError) {
-        ctx.ui.notify(`Could not run ${command}: ${result.spawnError.message}`, "error")
-        return
+      try {
+        const spentDate = resolveProjectTimeDate(parsed.argv[1])
+        const project = parsed.argv[3]
+        const plan = await loadTransform({
+          from: spentDate,
+          to: spentDate,
+          project,
+          mappings: new Map(),
+          logPath: projectTimeLogPath || undefined,
+        })
+        pi.sendMessage({
+          customType: "harvest-worklog-timesheet",
+          content: formatProjectTimeTimesheet(plan, { project, spentDate }),
+          display: true,
+          attribution: "assistant",
+        }, { triggerTurn: false })
+      } catch (error) {
+        ctx.ui.notify(`Could not read OMP Project Time: ${error.message}`, "error")
       }
-
-      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || `${command} exited with ${result.code}`
-      pi.sendMessage({ customType: "harvest-worklog-timesheet", content: output, display: true, attribution: "assistant" }, { triggerTurn: false })
     },
   })
   pi.registerTool(createTimeAggregateTool(pi.zod.z, { command }))

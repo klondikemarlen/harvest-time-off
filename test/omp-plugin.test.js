@@ -208,13 +208,10 @@ test("completes the explicit timesheet hierarchy contextually", () => {
   )
   assert.deepEqual(
     harvestWorklogArgumentCompletions("timesheet today --project WRAP ").map(item => item.value),
-    ["timesheet today --project WRAP --task", "timesheet today --project WRAP --help"],
+    ["timesheet today --project WRAP --help"],
   )
   const contextualHelp = harvestWorklogArgumentCompletions("timesheet today --project WRAP ").find(item => item.label === "--help")
-  assert.deepEqual(
-    parseHarvestWorklogArguments(contextualHelp.value),
-    { argv: ["timesheet", "today", "--project", "WRAP", "--help"] },
-  )
+  assert.deepEqual(parseHarvestWorklogArguments(contextualHelp.value), { help: true })
   assert.equal(harvestWorklogArgumentCompletions(`${contextualHelp.value} `), null)
   assert.equal(harvestWorklogArgumentCompletions("timesheet nonsense "), null)
   assert.equal(harvestWorklogArgumentCompletions("timesheet today extra "), null)
@@ -224,19 +221,20 @@ test("completes the explicit timesheet hierarchy contextually", () => {
 
 test("parses quoted explicit timesheet arguments", () => {
   assert.deepEqual(
-    parseCommandArguments("timesheet today --project 'Ice Fog Analytics' --task Programming"),
-    ["timesheet", "today", "--project", "Ice Fog Analytics", "--task", "Programming"],
+    parseCommandArguments("timesheet today --project 'Ice Fog Analytics'"),
+    ["timesheet", "today", "--project", "Ice Fog Analytics"],
   )
   assert.deepEqual(
-    parseHarvestWorklogArguments("timesheet today --project 'Ice Fog Analytics' --task Programming"),
-    { argv: ["timesheet", "today", "--project", "Ice Fog Analytics", "--task", "Programming"] },
+    parseHarvestWorklogArguments("timesheet today --project 'Ice Fog Analytics'"),
+    { argv: ["timesheet", "today", "--project", "Ice Fog Analytics"] },
   )
-  assert.deepEqual(parseHarvestWorklogArguments("timesheet --help"), { argv: ["timesheet", "--help"] })
-  assert.deepEqual(parseHarvestWorklogArguments("timesheet today --help"), { argv: ["timesheet", "today", "--help"] })
+  assert.deepEqual(parseHarvestWorklogArguments("timesheet --help"), { help: true })
+  assert.deepEqual(parseHarvestWorklogArguments("timesheet today --help"), { help: true })
   assert.equal(parseHarvestWorklogArguments("today Ice Fog Analytics --task Programming"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet today --task Programming"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet today --project WRAP --task"), null)
+  assert.equal(parseHarvestWorklogArguments("timesheet today --project WRAP --task Programming"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet today --project WRAP --bogus x"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet today --project WRAP --project Other"), null)
   assert.equal(parseHarvestWorklogArguments("timesheet nonsense --help"), null)
@@ -245,12 +243,13 @@ test("parses quoted explicit timesheet arguments", () => {
   assert.equal(parseCommandArguments("timesheet today --project 'WRAP"), null)
 })
 
-test("registers autocomplete and delegates slash commands to the CLI", async () => {
+test("registers autocomplete and reads local Project Time for slash timesheets", async () => {
   const tools = []
   const commands = []
   const calls = []
   const messages = []
   const notifications = []
+  const loads = []
   harvestTimeExtension({
     zod: { z },
     registerTool(tool) { tools.push(tool) },
@@ -259,7 +258,16 @@ test("registers autocomplete and delegates slash commands to the CLI", async () 
   }, {
     command: " ",
     projectTimeMappings: " ",
-    projectTimeLogPath: " ",
+    projectTimeLogPath: " /tmp/project-time.json ",
+    loadProjectTimeTransform: async options => {
+      loads.push(options)
+      return {
+        groups: [
+          { sourceKind: "human_active", milliseconds: 24_040_000 },
+          { sourceKind: "agent_turn_elapsed", milliseconds: 1_789_000 },
+        ],
+      }
+    },
     run: async (...args) => {
       calls.push(args)
       return { code: 0, stdout: "CLI output", stderr: "" }
@@ -276,16 +284,20 @@ test("registers autocomplete and delegates slash commands to the CLI", async () 
   await command.handler("", { cwd: "/tmp", ui })
   assert.match(notifications[0].message, /\/harvest-worklog timesheet DATE --project PROJECT/)
 
-  await command.handler("timesheet today --project WRAP --task Programming", { cwd: "/tmp", ui })
-  assert.deepEqual(calls[0], [
-    "harvest-worklog",
-    ["timesheet", "today", "--project", "WRAP", "--task", "Programming"],
-    { cwd: "/tmp" },
-  ])
+  await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
+  assert.deepEqual(loads, [{
+    from: "2026-07-20",
+    to: "2026-07-20",
+    project: "wrap",
+    mappings: new Map(),
+    logPath: "/tmp/project-time.json",
+  }])
+  assert.equal(calls.length, 0)
   assert.equal(messages[0].message.customType, "harvest-worklog-timesheet")
+  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20\n\nHuman active · 6h 40m 40s\nAgent elapsed · 29m 49s")
 
   await command.handler("time-off --help", { cwd: "/tmp", ui })
-  assert.equal(calls.length, 1)
+  assert.equal(calls.length, 0)
 
   assert.deepEqual(
     tools.map(tool => tool.name),

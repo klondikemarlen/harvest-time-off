@@ -169,6 +169,54 @@ export async function loadProjectTimeTransform({ from, to, repositoryId, project
   return projectTimeTransform(state, mappings, { from, to, repositoryId, project, sourceKind, applyMappings })
 }
 
+export function resolveProjectTimeDate(value, today = new Date()) {
+  const alias = value.toLowerCase()
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  if (alias === "today") return localDate(date)
+  if (alias === "yesterday") {
+    date.setDate(date.getDate() - 1)
+    return localDate(date)
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) throw new Error("DATE must be today, yesterday, or YYYY-MM-DD")
+  const [, year, month, day] = match.map(Number)
+  const parsed = new Date(year, month - 1, day)
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) {
+    throw new Error("DATE must be a valid local date")
+  }
+  return value
+}
+
+export function formatProjectTimeTimesheet(plan, { project, spentDate }) {
+  const [year, month, day] = spentDate.split("-").map(Number)
+  const date = new Date(year, month - 1, day)
+  const heading = `${project} · ${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()]}, ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()]} ${date.getDate()}`
+  if (plan.groups.length === 0) {
+    return `${heading}\n\nNo local Project Time sessions found for ${project} on ${spentDate}.`
+  }
+
+  const totals = new Map([["human_active", 0], ["agent_turn_elapsed", 0]])
+  for (const group of plan.groups) {
+    if (totals.has(group.sourceKind)) totals.set(group.sourceKind, totals.get(group.sourceKind) + group.milliseconds)
+  }
+  return [
+    heading,
+    "",
+    `Human active · ${formatDuration(totals.get("human_active"))}`,
+    `Agent elapsed · ${formatDuration(totals.get("agent_turn_elapsed"))}`,
+  ].join("\n")
+}
+
+function formatDuration(milliseconds) {
+  let seconds = Math.floor(Math.max(0, milliseconds) / 1000)
+  const hours = Math.floor(seconds / 3600)
+  seconds %= 3600
+  const minutes = Math.floor(seconds / 60)
+  seconds %= 60
+  return [hours && `${hours}h`, (hours || minutes) && `${minutes}m`, `${seconds}s`].filter(Boolean).join(" ")
+}
+
 function mappedEntries(groups, mappings, unmapped) {
   const entries = new Map()
 
