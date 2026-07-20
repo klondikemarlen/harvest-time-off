@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { createProjectTimeTool, createProjectTimeTransformTool, workEntryArguments } from "../index.js"
-import { parseProjectTimeMappings, projectTimeEntries, projectTimeTransform } from "../project-time.js"
+import { formatProjectTimeTimesheet, parseProjectTimeMappings, projectTimeEntries, projectTimeTransform, resolveProjectTimeDate } from "../project-time.js"
 
 const schema = () => ({
   regex() { return this },
@@ -35,6 +35,27 @@ test("normalizes and validates Project Time mapping settings", () => {
       " Harvest API ": { project: "Other", task: "Development" },
     }),
     /duplicate project Harvest API/,
+  )
+})
+
+test("formats local human and agent times without Harvest mappings", () => {
+  const plan = {
+    groups: [
+      { sourceKind: "human_active", milliseconds: 24_040_000 },
+      { sourceKind: "agent_turn_elapsed", milliseconds: 1_789_000 },
+    ],
+  }
+
+  assert.equal(
+    formatProjectTimeTimesheet(plan, { project: "wrap", spentDate: "2026-07-20" }),
+    "wrap · Mon, Jul 20\n\nHuman active · 6h 40m 40s\nAgent elapsed · 29m 49s",
+  )
+  assert.equal(resolveProjectTimeDate("today", new Date(2026, 6, 20, 12)), "2026-07-20")
+  assert.equal(resolveProjectTimeDate("yesterday", new Date(2026, 6, 20, 12)), "2026-07-19")
+  assert.throws(() => resolveProjectTimeDate("2026-02-31"), /valid local date/)
+  assert.equal(
+    formatProjectTimeTimesheet({ groups: [] }, { project: "WRAP", spentDate: "2026-07-20" }),
+    "WRAP · Mon, Jul 20\n\nNo local Project Time sessions found for WRAP on 2026-07-20.",
   )
 })
 
