@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { aggregateArguments, createTimeAggregateTool, createTimeOffTool, timeOffArguments } from "../index.js"
+import harvestTimeExtension, { aggregateArguments, createTimeAggregateTool, createTimeOffTool, timeOffArguments } from "../index.js"
 
 const schema = () => ({
   regex() { return this },
@@ -116,4 +116,24 @@ test("uses configured default hours and holiday regions", async () => {
     "time-off", "2026-08-17", "2026-08-28", "--project", "Time Off - Marlen", "--task", "Vacation / PTO",
     "--hours", "6.5", "--holiday-region", "ca_yt", "--holiday-region", "ca",
   ])
+})
+
+test("registers Project Time transform preview and record tools", () => {
+  const tools = []
+  harvestTimeExtension({
+    zod: { z },
+    registerTool(tool) { tools.push(tool) },
+  })
+
+  assert.deepEqual(
+    tools.map(tool => tool.name),
+    [
+      "harvest_time_aggregates",
+      "harvest_record_time_off",
+      "harvest_preview_project_time_entries",
+      "harvest_record_project_time_entries",
+      "harvest_preview_project_time_transforms",
+      "harvest_record_project_time_transforms",
+    ],
+  )
 })

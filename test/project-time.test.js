@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { createProjectTimeTool, workEntryArguments } from "../index.js"
-import { parseProjectTimeMappings, projectTimeEntries } from "../project-time.js"
+import { createProjectTimeTool, createProjectTimeTransformTool, workEntryArguments } from "../index.js"
+import { parseProjectTimeMappings, projectTimeEntries, projectTimeTransform } from "../project-time.js"
 
 const schema = () => ({
   regex() { return this },
@@ -76,4 +76,105 @@ test("previews mapped Project Time entries without writing", async () => {
     workEntryArguments({ spentDate: "2026-07-17", project: "Internal", task: "Development", hours: 1.25, notes: "OMP Project Time: Harvest API (repo)" }, false),
     ["work-entry", "2026-07-17", "--project", "Internal", "--task", "Development", "--hours", "1.25", "--notes", "OMP Project Time: Harvest API (repo)"],
   )
+})
+
+test("filters, groups, maps, and reports Project Time transforms deterministically", () => {
+  const at = (hour, minute = 0) => new Date(2026, 6, 17, hour, minute).getTime()
+  const mappings = parseProjectTimeMappings(JSON.stringify({
+    "Harvest API": { project: "Internal", task: "Development" },
+  }))
+  const state = {
+    entries: [
+      { project: "Harvest API", repositoryId: "repo", sourceKind: "human_active", activity: "implementation", startAtMs: at(9), endAtMs: at(9, 30) },
+      { project: "Harvest API", repositoryId: "repo", sourceKind: "human_active", activity: "implementation", startAtMs: at(10), endAtMs: at(10, 30) },
+      { project: "Harvest API", repositoryId: "repo", sourceKind: "human_active", startAtMs: at(11), endAtMs: at(11, 15) },
+      { project: "Other", repositoryId: "repo", sourceKind: "human_active", activity: "review", startAtMs: at(12), endAtMs: at(12, 30) },
+      { project: "Harvest API", repositoryId: "repo", sourceKind: "idle", activity: "implementation", startAtMs: at(13), endAtMs: at(13, 30) },
+      { project: "Harvest API", repositoryId: "repo", sourceKind: "human_active", activity: "invalid", startAtMs: at(14), endAtMs: at(14) },
+    ],
+  }
+  const options = {
+    from: "2026-07-17",
+    to: "2026-07-17",
+    repositoryId: "repo",
+    sourceKind: "human_active",
+    applyMappings: true,
+  }
+
+  const plan = projectTimeTransform(state, mappings, options)
+
+  assert.deepEqual(
+    plan.groups.map(({ spentDate, activity, hours, harvest }) => ({ spentDate, activity, hours, harvest })),
+    [
+      { spentDate: "2026-07-17", activity: "implementation", hours: 1, harvest: { project: "Internal", task: "Development" } },
+      { spentDate: "2026-07-17", activity: "unlabelled", hours: 0.25, harvest: { project: "Internal", task: "Development" } },
+      { spentDate: "2026-07-17", activity: "review", hours: 0.5, harvest: null },
+    ],
+  )
+  assert.deepEqual(
+    plan.entries.map(({ spentDate, project, task, activity, hours }) => ({ spentDate, project, task, activity, hours })),
+    [
+      { spentDate: "2026-07-17", project: "Internal", task: "Development", activity: "implementation", hours: 1 },
+      { spentDate: "2026-07-17", project: "Internal", task: "Development", activity: "unlabelled", hours: 0.25 },
+    ],
+  )
+  assert.deepEqual(plan.unmapped.map(({ activity, reason }) => ({ activity, reason })), [{ activity: "review", reason: "unmapped_project" }])
+  assert.deepEqual(plan.excluded.map(({ activity, reason }) => ({ activity, reason })), [
+    { activity: "implementation", reason: "source_kind" },
+    { activity: "invalid", reason: "invalid_interval" },
+  ])
+  assert.equal(JSON.stringify(plan), JSON.stringify(projectTimeTransform(state, mappings, options)))
+})
+
+test("previews JSON transforms and records activity entries sequentially", async () => {
+  const plan = {
+    groups: [],
+    entries: [
+      { spentDate: "2026-07-17", project: "Internal", task: "Development", activity: "implementation", hours: 1, notes: "OMP Project Time activity: \"implementation\"\nHarvest API (repo)" },
+      { spentDate: "2026-07-17", project: "Internal", task: "Development", activity: "review", hours: 0.5, notes: "OMP Project Time activity: \"review\"\nHarvest API (repo)" },
+    ],
+    unmapped: [],
+    excluded: [],
+  }
+  const previewCalls = []
+  const preview = createProjectTimeTransformTool(z, {
+    loadTransform: async options => {
+      previewCalls.push(options)
+      return plan
+    },
+  }, { record: false })
+
+  const previewResult = await preview.execute("preview", {
+    from: "2026-07-17",
+    to: "2026-07-17",
+    repositoryId: "repo",
+    sourceKind: "human_active",
+    applyMappings: true,
+  }, undefined, undefined, { cwd: "/tmp" })
+
+  assert.equal(preview.approval, "read")
+  assert.deepEqual(JSON.parse(previewResult.content[0].text), plan)
+  assert.equal(previewCalls[0].applyMappings, true)
+
+  const calls = []
+  let inFlight = 0
+  let maximumInFlight = 0
+  const record = createProjectTimeTransformTool(z, {
+    loadTransform: async () => plan,
+    run: async (...args) => {
+      calls.push(args)
+      inFlight += 1
+      maximumInFlight = Math.max(maximumInFlight, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      inFlight -= 1
+      return { code: 0, stdout: "Created", stderr: "" }
+    },
+  }, { record: true })
+
+  const recordResult = await record.execute("record", { from: "2026-07-17", to: "2026-07-17" }, undefined, undefined, { cwd: "/tmp" })
+
+  assert.equal(record.approval, "write")
+  assert.equal(maximumInFlight, 1)
+  assert.deepEqual(calls.map(([, args]) => args.at(-1)), ["--activity-entry", "--activity-entry"])
+  assert.deepEqual(JSON.parse(recordResult.content[0].text).results.map(result => result.code), [0, 0])
 })

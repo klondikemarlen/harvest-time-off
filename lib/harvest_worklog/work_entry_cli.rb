@@ -6,7 +6,7 @@ module HarvestWorklog
     LOCKED_ENTRY = 3
 
     def self.run(arguments, output: $stdout, error: $stderr, client: nil)
-      options = { dry_run: false }
+      options = { dry_run: false, activity_entry: false }
       parser = option_parser(options)
       dates = parser.parse(arguments)
       validate!(dates, options)
@@ -29,7 +29,14 @@ module HarvestWorklog
         return LOCKED_ENTRY
       end
 
-      if existing_entries.any?
+      if options[:activity_entry]
+        activity_key = options[:notes].lines.first
+        unrelated_entries = existing_entries.reject { |entry| entry["notes"]&.lines&.first&.start_with?("OMP Project Time activity: ") }
+        if unrelated_entries.any? || existing_entries.any? { |entry| entry["notes"]&.lines&.first == activity_key }
+          output.puts "Existing Harvest entry on #{spent_date.iso8601}; skipped"
+          return EXISTING_ENTRY
+        end
+      elsif existing_entries.any?
         output.puts "Existing Harvest entry on #{spent_date.iso8601}; skipped"
         return EXISTING_ENTRY
       end
@@ -64,6 +71,7 @@ module HarvestWorklog
         opts.on("--hours HOURS", Float, "Hours for this entry") { |value| options[:hours] = value }
         opts.on("--notes NOTES", "Entry description") { |value| options[:notes] = value }
         opts.on("--dry-run", "Check for existing entries without writing") { options[:dry_run] = true }
+        opts.on("--activity-entry", "Allow distinct OMP Project Time activity entries on the same date, project, and task") { options[:activity_entry] = true }
         opts.on("-h", "--help", "Show this help") do
           puts opts
           exit 0
