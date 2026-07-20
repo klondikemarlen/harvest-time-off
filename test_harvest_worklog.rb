@@ -173,6 +173,63 @@ class HarvestWorklogTest < Minitest::Test
     assert_equal ["OMP Project Time activity: \"implementation\"\nHarvest API (repo)", "OMP Project Time activity: \"review\"\nHarvest API (repo)"], client.entries.map { |entry| entry.fetch(:notes) }
   end
 
+  def test_timesheet_cli_prints_project_tasks_and_multiline_notes
+    client = AggregateClient.new([{ "time_entries" => [
+      { "spent_date" => "2026-07-17", "hours" => 2, "notes" => "fixing tests\nstarting templates", "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } },
+      { "spent_date" => "2026-07-17", "hours" => 1.5, "notes" => "reviewing PRs", "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } },
+      { "spent_date" => "2026-07-17", "hours" => 0.5, "notes" => nil, "project" => { "name" => "WRAP" }, "task" => { "name" => "Meeting" } },
+      { "spent_date" => "2026-07-17", "hours" => 9, "notes" => "excluded", "project" => { "name" => "Other" }, "task" => { "name" => "Programming" } }
+    ], "next_page" => nil }])
+    output = StringIO.new
+
+    status = HarvestWorklog::CLI.run(["timesheet", "2026-07-17", "--project", "wrap"], output:, client:)
+
+    assert_equal 0, status
+    assert_equal <<~OUTPUT, output.string
+      WRAP · Fri, Jul 17 · 4h
+
+      Meeting · 0.5h
+        (no notes)
+
+      Programming · 3.5h
+        2h
+          fixing tests
+          starting templates
+        1.5h
+          reviewing PRs
+    OUTPUT
+    assert_equal [
+      { method: :get, path: "/v2/users/me", params: {} },
+      { method: :get, path: "/v2/time_entries", params: { from: "2026-07-17", to: "2026-07-17", page: 1, per_page: 100, user_id: 42 } }
+    ], client.requests
+  end
+
+  def test_timesheet_cli_resolves_relative_dates_and_reports_empty_days
+    today = Date.new(2026, 7, 17)
+    output = StringIO.new
+
+    status = HarvestWorklog::TimesheetCLI.run(["yesterday", "--project", "WRAP"], output:, client: AggregateClient.new([{ "time_entries" => [], "next_page" => nil }]), today:)
+
+    assert_equal Date.new(2026, 7, 17), HarvestWorklog::TimesheetCLI.resolve_date("today", today:)
+    assert_equal Date.new(2026, 7, 16), HarvestWorklog::TimesheetCLI.resolve_date("yesterday", today:)
+    assert_equal Date.new(2026, 7, 15), HarvestWorklog::TimesheetCLI.resolve_date("2026-07-15", today:)
+    assert_equal 0, status
+    assert_equal "WRAP · Thu, Jul 16 · 0h\n\nNo time entries.\n", output.string
+  end
+
+  def test_timesheet_cli_filters_to_one_task
+    output = StringIO.new
+    client = AggregateClient.new([{ "time_entries" => [
+      { "spent_date" => "2026-07-17", "hours" => 2, "notes" => "build", "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } },
+      { "spent_date" => "2026-07-17", "hours" => 1, "notes" => "plan", "project" => { "name" => "WRAP" }, "task" => { "name" => "Meeting" } }
+    ], "next_page" => nil }])
+
+    status = HarvestWorklog::TimesheetCLI.run(["today", "--project", "WRAP", "--task", "Programming"], output:, client:, today: Date.new(2026, 7, 17))
+
+    assert_equal 0, status
+    assert_equal "WRAP · Fri, Jul 17 · 2h\n\nProgramming · 2h\n  build\n", output.string
+  end
+
   def test_aggregate_cli_paginates_filters_and_shows_empty_dates
     client = AggregateClient.new(
       [
@@ -267,13 +324,16 @@ class HarvestWorklogTest < Minitest::Test
   class AggregateClient
     attr_reader :requests
 
-    def initialize(pages)
+    def initialize(pages, current_user_id: 42)
       @pages = pages
+      @current_user_id = current_user_id
       @requests = []
     end
 
     def request(method, path, params:)
       @requests << { method:, path:, params: }
+      return { "id" => @current_user_id } if path == "/v2/users/me"
+
       @pages.fetch(params.fetch(:page) - 1)
     end
   end

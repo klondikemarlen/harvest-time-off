@@ -23,6 +23,7 @@ Personal Access Tokens are the intended Harvest authentication method for person
 harvest-worklog time-off FROM TO --project NAME --task NAME [options]
 harvest-worklog work-entry DATE --project NAME --task NAME --hours HOURS --notes NOTES [options]
 harvest-worklog aggregate FROM TO [--project NAME] [--task NAME]
+harvest-worklog timesheet DATE --project NAME [--task NAME]
 ```
 
 ### Time off
@@ -56,6 +57,16 @@ harvest-worklog aggregate 2026-07-17 2026-07-19 \
 ```
 
 The `harvest_time_aggregates` OMP tool exposes the same optional filters and is approval-gated as a read.
+
+### Daily timesheets
+
+The `timesheet` command reads the authenticated user's compact daily Harvest view: task totals, entry durations when a task has multiple entries, and multiline notes. `DATE` accepts `today`, `yesterday`, or an ISO date in the CLI's local timezone.
+
+```bash
+harvest-worklog timesheet today --project WRAP
+```
+
+OMP exposes the same CLI-only path through `/harvest-worklog today WRAP` and the read-only `harvest_time_sheet` tool. The wrapper never calls Harvest directly. A later, separate feature may upload reviewed content through the Harvest API; keep that write path separate from this read-only formatter.
 
 ## OMP settings
 

@@ -60,6 +60,12 @@ export function aggregateArguments({ from, to, project, task }) {
   return args
 }
 
+export function timesheetArguments({ date, project, task }) {
+  const args = ["timesheet", date, "--project", project]
+  if (task) args.push("--task", task)
+  return args
+}
+
 export function createProjectTimeTool(
   z,
   {
@@ -226,6 +232,38 @@ export function createTimeAggregateTool(z, { command = "harvest-worklog", run = 
   }
 }
 
+export function createTimesheetTool(z, { command = "harvest-worklog", run = runCommand } = {}) {
+  return {
+    name: "harvest_time_sheet",
+    label: "View Daily Harvest Timesheet",
+    description: "Read one project's compact Harvest timesheet for today, yesterday, or an ISO date. This does not write Harvest records.",
+    approval: "read",
+    parameters: z.object({
+      date: z.string().min(1),
+      project: z.string().min(1),
+      task: z.string().min(1).optional(),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const args = timesheetArguments(params)
+      onUpdate?.({ content: [{ type: "text", text: "Reading Harvest timesheet…" }] })
+      const result = await run(command, args, { cwd: ctx.cwd, signal })
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
+
+      if (result.spawnError) {
+        return {
+          content: [{ type: "text", text: `Could not run ${command}: ${result.spawnError.message}` }],
+          details: { command, args, code: result.code },
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: output || `${command} exited with ${result.code}` }],
+        details: { command, args, code: result.code },
+      }
+    },
+  }
+}
+
 export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours = 7, holidayRegions = "", run = runCommand } = {}) {
   return {
     name: "harvest_record_time_off",
@@ -264,7 +302,29 @@ export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours
 
 export default function harvestTimeExtension(pi, options = {}) {
   pi.setLabel?.("Harvest Worklog")
+  const command = options.command ?? "harvest-worklog"
+  const run = options.run ?? runCommand
+  pi.registerCommand("harvest-worklog", {
+    description: "Show one project's daily Harvest timesheet: /harvest-worklog DATE PROJECT",
+    handler: async (args, ctx) => {
+      const match = args.trim().match(/^(\S+)\s+(.+)$/)
+      if (!match) {
+        ctx.ui.notify("Usage: /harvest-worklog DATE PROJECT", "error")
+        return
+      }
+
+      const result = await run(command, timesheetArguments({ date: match[1], project: match[2] }), { cwd: ctx.cwd })
+      if (result.spawnError) {
+        ctx.ui.notify(`Could not run ${command}: ${result.spawnError.message}`, "error")
+        return
+      }
+
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || `${command} exited with ${result.code}`
+      pi.sendMessage({ customType: "harvest-worklog-timesheet", content: output, display: true, attribution: "assistant" }, { triggerTurn: false })
+    },
+  })
   pi.registerTool(createTimeAggregateTool(pi.zod.z, { command: options.command }))
+  pi.registerTool(createTimesheetTool(pi.zod.z, { command, run }))
   pi.registerTool(createTimeOffTool(pi.zod.z, {
     command: options.command,
     defaultHours: options.defaultHours,

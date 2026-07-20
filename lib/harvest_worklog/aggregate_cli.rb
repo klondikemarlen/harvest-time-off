@@ -40,14 +40,16 @@ module HarvestWorklog
       raise Error, "FROM and TO are required" unless dates.length == 2
     end
 
-    def self.fetch_entries(client, from:, to:)
+    def self.fetch_entries(client, from:, to:, user_id: nil)
       entries = []
       page = 1
       loop do
+        params = { from: from.iso8601, to: to.iso8601, page:, per_page: PER_PAGE }
+        params[:user_id] = user_id if user_id
         response = client.request(
           :get,
           "/v2/time_entries",
-          params: { from: from.iso8601, to: to.iso8601, page:, per_page: PER_PAGE }
+          params:
         )
         entries.concat(response.fetch("time_entries"))
         page = response["next_page"]
