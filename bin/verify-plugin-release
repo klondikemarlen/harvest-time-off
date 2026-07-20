@@ -10,6 +10,6 @@ if [[ "$installed_version" != "$version" ]]; then
   printf 'Expected installed harvest-worklog@%s, found %s.\n' "$version" "$installed_version" >&2
   exit 1
 fi
-bin/smoke-installed-plugin.mjs
+node --test "$HOME/.omp/plugins/node_modules/harvest-worklog/test/"*.test.js
 printf 'Verified harvest-worklog@%s.\n' "$version"
 printf 'Existing OMP sessions must be restarted before manual QA.\n'
