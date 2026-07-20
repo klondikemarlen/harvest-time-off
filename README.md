@@ -137,7 +137,8 @@ gem push "harvest-worklog-${VERSION}.gem"
 gem uninstall harvest-time-off --all --executables --ignore-dependencies
 gem install --clear-sources --source https://rubygems.org harvest-worklog --version "$VERSION" --no-document
 omp plugin uninstall harvest-time-off
-omp plugin install --force github:klondikemarlen/harvest-worklog
-omp plugin list
+npm run verify:release
 harvest-worklog --help
 ```
+
+OMP loads extensions at process startup; reinstalling a plugin does not update already-running sessions. Confirm `harvest-worklog@<VERSION>` in `omp plugin list`, then start a fresh OMP process for autocomplete and slash-command QA. Exit and restart every older OMP session before relying on the released behavior.
