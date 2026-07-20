@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { loadProjectTimeEntries, parseProjectTimeMappings } from "./project-time.js"
+import { loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings } from "./project-time.js"
 
 export function timeOffArguments({
   from,
@@ -39,7 +39,7 @@ export function runCommand(command, args, { cwd, signal } = {}) {
   })
 }
 
-export function workEntryArguments(entry, dryRun) {
+export function workEntryArguments(entry, dryRun, { activityEntry = false } = {}) {
   const args = [
     "work-entry",
     entry.spentDate,
@@ -49,6 +49,7 @@ export function workEntryArguments(entry, dryRun) {
     "--notes", entry.notes,
   ]
   if (dryRun) args.push("--dry-run")
+  if (activityEntry) args.push("--activity-entry")
   return args
 }
 
@@ -116,6 +117,76 @@ export function createProjectTimeTool(
         return {
           content: [{ type: "text", text: `Could not ${operation.toLowerCase()} OMP Project Time entries: ${error.message}` }],
           details: { entries: [] },
+        }
+      }
+    },
+  }
+}
+
+export function createProjectTimeTransformTool(
+  z,
+  {
+    command = "harvest-worklog",
+    projectTimeMappings = "{}",
+    projectTimeLogPath = "",
+    run = runCommand,
+    loadTransform = loadProjectTimeTransform,
+  } = {},
+  { record },
+) {
+  const operation = record ? "Record" : "Preview"
+  const parameters = {
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
+    repositoryId: z.string().min(1).optional(),
+    project: z.string().min(1).optional(),
+    sourceKind: z.string().min(1).optional(),
+  }
+  if (!record) parameters.applyMappings = z.boolean().optional()
+
+  return {
+    name: record ? "harvest_record_project_time_transforms" : "harvest_preview_project_time_transforms",
+    label: `${operation} Project Time transforms`,
+    description: `${operation} local Project Time intervals grouped by date and activity. Preview never writes Harvest; recording is approval-gated and preserves duplicate and locked-entry checks.`,
+    approval: record ? "write" : "read",
+    parameters: z.object(parameters),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      try {
+        const plan = await loadTransform({
+          ...params,
+          applyMappings: record || params.applyMappings === true,
+          mappings: parseProjectTimeMappings(projectTimeMappings),
+          logPath: projectTimeLogPath || undefined,
+        })
+        if (!record) {
+          return {
+            content: [{ type: "text", text: JSON.stringify(plan) }],
+            details: plan,
+          }
+        }
+
+        onUpdate?.({ content: [{ type: "text", text: `Recording ${plan.entries.length} transformed Harvest work entr${plan.entries.length === 1 ? "y" : "ies"}…` }] })
+        const results = []
+        for (const entry of plan.entries) {
+          const result = await run(command, workEntryArguments(entry, false, { activityEntry: true }), { cwd: ctx.cwd, signal })
+          results.push({
+            entry,
+            code: result.code,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            spawnError: result.spawnError?.message ?? null,
+          })
+        }
+        const output = { plan, results }
+        return {
+          content: [{ type: "text", text: JSON.stringify(output) }],
+          details: output,
+        }
+      } catch (error) {
+        const output = { error: error.message }
+        return {
+          content: [{ type: "text", text: JSON.stringify(output) }],
+          details: output,
         }
       }
     },
@@ -209,4 +280,14 @@ export default function harvestTimeExtension(pi, options = {}) {
     projectTimeMappings: options.projectTimeMappings,
     projectTimeLogPath: options.projectTimeLogPath,
   }, { dryRun: false }))
+  pi.registerTool(createProjectTimeTransformTool(pi.zod.z, {
+    command: options.command,
+    projectTimeMappings: options.projectTimeMappings,
+    projectTimeLogPath: options.projectTimeLogPath,
+  }, { record: false }))
+  pi.registerTool(createProjectTimeTransformTool(pi.zod.z, {
+    command: options.command,
+    projectTimeMappings: options.projectTimeMappings,
+    projectTimeLogPath: options.projectTimeLogPath,
+  }, { record: true }))
 }

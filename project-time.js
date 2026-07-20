@@ -80,6 +80,169 @@ export function projectTimeEntries(state, mappings, { from, to }) {
   }
 }
 
+export function projectTimeTransform(
+  state,
+  mappings,
+  {
+    from,
+    to,
+    repositoryId,
+    project,
+    sourceKind,
+    applyMappings = false,
+  },
+) {
+  if (!state || !Array.isArray(state.entries)) {
+    throw new Error("OMP Project Time log is missing an entries array")
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+    throw new Error("from and to must be an inclusive ISO date range")
+  }
+
+  const grouped = new Map()
+  const excluded = []
+
+  for (const session of state.entries) {
+    const row = sessionRow(session)
+    if (!session || !Number.isFinite(session.startAtMs) || !Number.isFinite(session.endAtMs) || session.startAtMs >= session.endAtMs) {
+      excluded.push({ ...row, reason: "invalid_interval" })
+      continue
+    }
+
+    const reasons = []
+    if (repositoryId !== undefined && session.repositoryId !== repositoryId) reasons.push("repository_id")
+    if (project !== undefined && session.project !== project) reasons.push("project")
+    if (sourceKind !== undefined && session.sourceKind !== sourceKind) reasons.push("source_kind")
+    if (reasons.length > 0) {
+      excluded.push({ ...row, reason: reasons.join(",") })
+      continue
+    }
+
+    let cursor = session.startAtMs
+    let included = false
+    while (cursor < session.endAtMs) {
+      const date = new Date(cursor)
+      const spentDate = localDate(date)
+      const segmentEnd = Math.min(session.endAtMs, new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime())
+
+      if (spentDate >= from && spentDate <= to) {
+        const activity = typeof session.activity === "string" && session.activity.length > 0 ? session.activity : "unlabelled"
+        const key = JSON.stringify([spentDate, session.repositoryId, session.project, session.sourceKind ?? null, activity])
+        const entry = grouped.get(key) ?? {
+          spentDate,
+          repositoryId: session.repositoryId ?? null,
+          project: session.project ?? null,
+          sourceKind: session.sourceKind ?? null,
+          activity,
+          milliseconds: 0,
+        }
+        entry.milliseconds += segmentEnd - cursor
+        grouped.set(key, entry)
+        included = true
+      }
+      cursor = segmentEnd
+    }
+    if (!included) excluded.push({ ...row, reason: "date_range" })
+  }
+
+  const groups = [...grouped.values()]
+    .map(entry => ({ ...entry, hours: displayHours(entry.milliseconds), harvest: null }))
+    .sort(compareGroups)
+  const unmapped = []
+  const entries = applyMappings ? mappedEntries(groups, mappings, unmapped) : []
+
+  return {
+    groups,
+    entries,
+    unmapped: unmapped.sort(compareGroups),
+    excluded: excluded.sort(compareRows),
+  }
+}
+
+export async function loadProjectTimeTransform({ from, to, repositoryId, project, sourceKind, applyMappings, mappings, logPath = defaultProjectTimeLogPath(), read = readFile }) {
+  const state = JSON.parse(await read(logPath, "utf8"))
+  return projectTimeTransform(state, mappings, { from, to, repositoryId, project, sourceKind, applyMappings })
+}
+
+function mappedEntries(groups, mappings, unmapped) {
+  const entries = new Map()
+
+  for (const group of groups) {
+    const mapping = mappings.get(group.project)
+    if (!mapping) {
+      unmapped.push({ ...group, reason: "unmapped_project" })
+      continue
+    }
+
+    group.harvest = { project: mapping.project, task: mapping.task }
+    const key = JSON.stringify([group.spentDate, mapping.project, mapping.task, group.activity])
+    const entry = entries.get(key) ?? {
+      spentDate: group.spentDate,
+      project: mapping.project,
+      task: mapping.task,
+      activity: group.activity,
+      milliseconds: 0,
+      sources: [],
+    }
+    entry.milliseconds += group.milliseconds
+    entry.sources.push({
+      spentDate: group.spentDate,
+      repositoryId: group.repositoryId,
+      project: group.project,
+      sourceKind: group.sourceKind,
+      activity: group.activity,
+      milliseconds: group.milliseconds,
+      hours: group.hours,
+    })
+    entries.set(key, entry)
+  }
+
+  return [...entries.values()]
+    .map(entry => {
+      const sources = entry.sources.sort(compareGroups)
+      return {
+        ...entry,
+        hours: displayHours(entry.milliseconds),
+        notes: `OMP Project Time activity: ${JSON.stringify(entry.activity)}\n${sources.map(source => `${source.project} (${source.repositoryId})`).join("; ")}`,
+        sources,
+      }
+    })
+    .filter(entry => entry.hours > 0)
+    .sort((left, right) => left.spentDate.localeCompare(right.spentDate) || left.project.localeCompare(right.project) || left.task.localeCompare(right.task) || left.activity.localeCompare(right.activity))
+}
+
+function sessionRow(session) {
+  return {
+    repositoryId: session?.repositoryId ?? null,
+    project: session?.project ?? null,
+    sourceKind: session?.sourceKind ?? null,
+    activity: typeof session?.activity === "string" && session.activity.length > 0 ? session.activity : "unlabelled",
+    startAtMs: session?.startAtMs ?? null,
+    endAtMs: session?.endAtMs ?? null,
+  }
+}
+
+function displayHours(milliseconds) {
+  return Math.round((milliseconds / HOUR_MS) * 100) / 100
+}
+
+function compareGroups(left, right) {
+  return left.spentDate.localeCompare(right.spentDate) ||
+    String(left.project).localeCompare(String(right.project)) ||
+    String(left.repositoryId).localeCompare(String(right.repositoryId)) ||
+    String(left.sourceKind).localeCompare(String(right.sourceKind)) ||
+    left.activity.localeCompare(right.activity)
+}
+
+function compareRows(left, right) {
+  return String(left.startAtMs).localeCompare(String(right.startAtMs)) ||
+    String(left.endAtMs).localeCompare(String(right.endAtMs)) ||
+    String(left.project).localeCompare(String(right.project)) ||
+    String(left.repositoryId).localeCompare(String(right.repositoryId)) ||
+    String(left.sourceKind).localeCompare(String(right.sourceKind)) ||
+    left.reason.localeCompare(right.reason)
+}
+
 export async function loadProjectTimeEntries({ from, to, mappings, logPath = defaultProjectTimeLogPath(), read = readFile }) {
   const state = JSON.parse(await read(logPath, "utf8"))
   return projectTimeEntries(state, mappings, { from, to })

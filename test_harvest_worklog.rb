@@ -126,6 +126,53 @@ class HarvestWorklogTest < Minitest::Test
     assert_empty client.entries
   end
 
+  def test_work_entry_activity_entry_allows_distinct_activity
+    client = FakeClient.new(existing_entries: [{ "is_locked" => false, "notes" => "OMP Project Time activity: \"implementation\"\nHarvest API (repo)" }])
+
+    status = HarvestWorklog::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time activity: \"review\"\nHarvest API (repo)", "--activity-entry"],
+      client:
+    )
+
+    assert_equal 0, status
+    assert_equal 1, client.entries.length
+  end
+
+  def test_work_entry_activity_entry_skips_the_same_activity
+    client = FakeClient.new(existing_entries: [{ "is_locked" => false, "notes" => "OMP Project Time activity: \"implementation\"\nHarvest API (repo)" }])
+
+    status = HarvestWorklog::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time activity: \"implementation\"\nDifferent repository", "--activity-entry"],
+      client:
+    )
+
+    assert_equal HarvestWorklog::WorkEntryCLI::EXISTING_ENTRY, status
+    assert_empty client.entries
+  end
+
+  def test_work_entry_activity_entry_skips_an_unrelated_entry
+    client = FakeClient.new(existing_entries: [{ "is_locked" => false, "notes" => "Manual work" }])
+
+    status = HarvestWorklog::WorkEntryCLI.run(
+      ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time activity: \"implementation\"\nHarvest API (repo)", "--activity-entry"],
+      client:
+    )
+
+    assert_equal HarvestWorklog::WorkEntryCLI::EXISTING_ENTRY, status
+    assert_empty client.entries
+  end
+
+  def test_work_entry_activity_entry_keeps_distinct_activities_on_one_date
+    client = FakeClient.new
+    implementation = ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "2.25", "--notes", "OMP Project Time activity: \"implementation\"\nHarvest API (repo)", "--activity-entry"]
+    review = ["2026-07-17", "--project", "Time Off - Marlen", "--task", "Vacation / PTO", "--hours", "0.5", "--notes", "OMP Project Time activity: \"review\"\nHarvest API (repo)", "--activity-entry"]
+
+    assert_equal 0, HarvestWorklog::WorkEntryCLI.run(implementation, client:)
+    assert_equal 0, HarvestWorklog::WorkEntryCLI.run(review, client:)
+    assert_equal HarvestWorklog::WorkEntryCLI::EXISTING_ENTRY, HarvestWorklog::WorkEntryCLI.run(implementation, client:)
+    assert_equal ["OMP Project Time activity: \"implementation\"\nHarvest API (repo)", "OMP Project Time activity: \"review\"\nHarvest API (repo)"], client.entries.map { |entry| entry.fetch(:notes) }
+  end
+
   def test_aggregate_cli_paginates_filters_and_shows_empty_dates
     client = AggregateClient.new(
       [
@@ -208,7 +255,7 @@ class HarvestWorklogTest < Minitest::Test
 
     def request(method, path, params:)
       @requests << { method:, path:, params: }
-      { "time_entries" => @existing_entries }
+      { "time_entries" => @existing_entries + @entries.map { |entry| { "is_locked" => false, "notes" => entry.fetch(:notes) } } }
     end
 
     def create_time_entry(**entry)
