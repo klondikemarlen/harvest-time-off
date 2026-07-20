@@ -21,7 +21,9 @@ Personal Access Tokens are the intended Harvest authentication method for person
 
 ```text
 harvest-worklog time-off FROM TO --project NAME --task NAME [options]
+harvest-worklog time-off FROM TO --project-id ID --task-id ID [options]
 harvest-worklog work-entry DATE --project NAME --task NAME --hours HOURS --notes NOTES [options]
+harvest-worklog work-entry DATE --project-id ID --task-id ID --hours HOURS --notes NOTES [options]
 harvest-worklog aggregate FROM TO [--project NAME] [--task NAME]
 harvest-worklog timesheet DATE --project NAME [--task NAME]
 ```
@@ -41,6 +43,8 @@ harvest-worklog time-off 2026-08-17 2026-08-28 \
 The default holiday region is `ca_yt`. Add `--holiday-region REGION` or set `HARVEST_HOLIDAY_REGIONS` to include other [Holidays](https://github.com/holidays/holidays) regions. `business_time` calculates business days and `holidays` supplies observed statutory holidays.
 
 A time-off block never creates weekend entries. When names are supplied, it resolves them from your active personal Harvest assignments, so a Project Manager role is not required.
+
+The `harvest_record_time_off` OMP tool accepts the same name pair or ID pair. Its optional `holidayRegions` array adds per-call regions to the configured defaults.
 
 ### Reviewed ordinary work
 
@@ -66,9 +70,9 @@ The `timesheet` command reads the authenticated user's compact daily Harvest vie
 harvest-worklog timesheet today --project WRAP
 ```
 
-OMP exposes the same CLI-only path through `/harvest-worklog today WRAP` and the read-only `harvest_time_sheet` tool. The wrapper never calls Harvest directly. A later, separate feature may upload reviewed content through the Harvest API; keep that write path separate from this read-only formatter.
+OMP exposes the same CLI-only path through `/harvest-worklog timesheet today --project WRAP` and the read-only `harvest_time_sheet` tool. The wrapper never calls Harvest directly. A later, separate feature may upload reviewed content through the Harvest API; keep that write path separate from this read-only formatter.
 
-Type `/harvest-worklog ` in OMP to discover the compact and explicit timesheet forms, relative date tokens, and context-valid `--project`/`--task` options. Completion keeps filter values as editable text, and the slash command delegates the selected timesheet argument vector to the CLI.
+Type `/harvest-worklog ` in OMP to discover `timesheet`, then select `today`, `yesterday`, or an ISO date before the contextual `--project` and `--task` options. Completion keeps filter values as editable text, and the slash command delegates the selected timesheet argument vector to the CLI.
 
 ## OMP settings
 

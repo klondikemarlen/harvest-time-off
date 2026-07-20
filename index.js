@@ -1,17 +1,33 @@
 import { spawn } from "node:child_process"
 import { loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings } from "./project-time.js"
 
+function normalizeHolidayRegions(regions) {
+  return [...new Set(regions.map(region => region.trim().toLowerCase()).filter(Boolean))]
+}
+
+function normalizeCommand(command) {
+  return command?.trim() || "harvest-worklog"
+}
+
 export function timeOffArguments({
   from,
   to,
   project,
   task,
+  projectId,
+  taskId,
   hours,
   notes,
+  holidayRegions: callHolidayRegions = [],
   dryRun = false,
 }, { defaultHours = 7, holidayRegions = [] } = {}) {
-  const args = ["time-off", from, to, "--project", project, "--task", task, "--hours", String(hours ?? defaultHours)]
-  for (const region of holidayRegions) args.push("--holiday-region", region)
+  const args = ["time-off", from, to]
+  if (project) args.push("--project", project)
+  if (task) args.push("--task", task)
+  if (projectId !== undefined) args.push("--project-id", String(projectId))
+  if (taskId !== undefined) args.push("--task-id", String(taskId))
+  args.push("--hours", String(hours ?? defaultHours))
+  for (const region of normalizeHolidayRegions([...holidayRegions, ...callHolidayRegions])) args.push("--holiday-region", region)
   if (notes) args.push("--notes", notes)
   if (dryRun) args.push("--dry-run")
   return args
@@ -77,6 +93,8 @@ export function createProjectTimeTool(
   } = {},
   { dryRun },
 ) {
+  command = normalizeCommand(command)
+  projectTimeLogPath = projectTimeLogPath.trim()
   const operation = dryRun ? "Preview" : "Record"
   return {
     name: dryRun ? "harvest_preview_project_time_entries" : "harvest_record_project_time_entries",
@@ -140,13 +158,15 @@ export function createProjectTimeTransformTool(
   } = {},
   { record },
 ) {
+  command = normalizeCommand(command)
+  projectTimeLogPath = projectTimeLogPath.trim()
   const operation = record ? "Record" : "Preview"
   const parameters = {
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
-    repositoryId: z.string().min(1).optional(),
-    project: z.string().min(1).optional(),
-    sourceKind: z.string().min(1).optional(),
+    repositoryId: z.string().trim().min(1).optional(),
+    project: z.string().trim().min(1).optional(),
+    sourceKind: z.string().trim().min(1).optional(),
   }
   if (!record) parameters.applyMappings = z.boolean().optional()
 
@@ -200,6 +220,7 @@ export function createProjectTimeTransformTool(
 }
 
 export function createTimeAggregateTool(z, { command = "harvest-worklog", run = runCommand } = {}) {
+  command = normalizeCommand(command)
   return {
     name: "harvest_time_aggregates",
     label: "View Harvest Time Aggregates",
@@ -208,8 +229,8 @@ export function createTimeAggregateTool(z, { command = "harvest-worklog", run = 
     parameters: z.object({
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
-      project: z.string().min(1).optional(),
-      task: z.string().min(1).optional(),
+      project: z.string().trim().min(1).optional(),
+      task: z.string().trim().min(1).optional(),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const args = aggregateArguments(params)
@@ -233,15 +254,16 @@ export function createTimeAggregateTool(z, { command = "harvest-worklog", run = 
 }
 
 export function createTimesheetTool(z, { command = "harvest-worklog", run = runCommand } = {}) {
+  command = normalizeCommand(command)
   return {
     name: "harvest_time_sheet",
     label: "View Daily Harvest Timesheet",
     description: "Read one project's compact Harvest timesheet for today, yesterday, or an ISO date. This does not write Harvest records.",
     approval: "read",
     parameters: z.object({
-      date: z.string().min(1),
-      project: z.string().min(1),
-      task: z.string().min(1).optional(),
+      date: z.string().regex(DATE_PATTERN, "must be today, yesterday, or an ISO date"),
+      project: z.string().trim().min(1),
+      task: z.string().trim().min(1).optional(),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const args = timesheetArguments(params)
@@ -264,23 +286,36 @@ export function createTimesheetTool(z, { command = "harvest-worklog", run = runC
   }
 }
 
-export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours = 7, holidayRegions = "", run = runCommand } = {}) {
+function hasValidAssignment({ project, task, projectId, taskId }) {
+  const anyNames = project !== undefined || task !== undefined
+  const anyIds = projectId !== undefined || taskId !== undefined
+  return (Boolean(project && task) && !anyIds) || (projectId !== undefined && taskId !== undefined && !anyNames)
+}
+
+export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours = 7, holidayRegions = "ca_yt", run = runCommand } = {}) {
+  command = normalizeCommand(command)
+  const configuredHolidayRegions = normalizeHolidayRegions(holidayRegions.split(","))
   return {
     name: "harvest_record_time_off",
     label: "Record Time Off",
-    description: "Create one Harvest duration entry for each local business day in an inclusive date range. Verify the project, task, dates, configured holiday region, hours, and optional note before calling; this mutates Harvest.",
+    description: "Create one Harvest duration entry for each local business day in an inclusive date range. Supply either project/task names or project/task IDs; optional holidayRegions add repeatable CLI regions. Verify all values before calling; this mutates Harvest.",
     approval: "write",
     parameters: z.object({
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date"),
-      project: z.string().min(1),
-      task: z.string().min(1),
+      project: z.string().trim().min(1).optional(),
+      task: z.string().trim().min(1).optional(),
+      projectId: z.number().int().positive().optional(),
+      taskId: z.number().int().positive().optional(),
       hours: z.number().positive().finite().optional(),
-      notes: z.string().min(1).optional(),
+      notes: z.string().trim().min(1).optional(),
+      holidayRegions: z.array(z.string().trim().min(1)).optional(),
       dryRun: z.boolean().optional(),
-    }),
+    })
+      .refine(hasValidAssignment, { message: "supply project and task, or projectId and taskId, but not both" })
+      .refine(params => configuredHolidayRegions.length > 0 || normalizeHolidayRegions(params.holidayRegions ?? []).length > 0, { message: "supply holidayRegions when no regions are configured" }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const args = timeOffArguments(params, { defaultHours, holidayRegions: holidayRegions.split(",").map(region => region.trim()).filter(Boolean) })
+      const args = timeOffArguments(params, { defaultHours, holidayRegions: configuredHolidayRegions })
       onUpdate?.({ content: [{ type: "text", text: "Recording Harvest time-off entries…" }] })
       const result = await run(command, args, { cwd: ctx.cwd, signal })
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
@@ -302,7 +337,6 @@ export function createTimeOffTool(z, { command = "harvest-worklog", defaultHours
 
 const HARVEST_WORKLOG_USAGE = [
   "Usage:",
-  "  /harvest-worklog DATE PROJECT [--task TASK]",
   "  /harvest-worklog timesheet DATE --project PROJECT [--task TASK]",
   "",
   "DATE: today, yesterday, or YYYY-MM-DD",
@@ -312,6 +346,12 @@ const DATE_COMPLETIONS = [
   { label: "today", value: "today", description: "Local date alias; YYYY-MM-DD is also accepted" },
   { label: "yesterday", value: "yesterday", description: "Previous local date; YYYY-MM-DD is also accepted" },
 ]
+
+function dateCompletions() {
+  const now = new Date()
+  const value = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map(part => String(part).padStart(2, "0")).join("-")
+  return [...DATE_COMPLETIONS, { label: "YYYY-MM-DD", value, description: "Today's local ISO date; edit as needed" }]
+}
 
 const DATE_PATTERN = /^(today|yesterday|\d{4}-\d{2}-\d{2})$/i
 
@@ -325,31 +365,34 @@ export function harvestWorklogArgumentCompletions(argumentPrefix) {
   const input = argumentPrefix
   const trimmed = input.trim()
 
+  if (trimmed.toLowerCase() === "timesheet") {
+    return dateCompletions().map(choice => ({ ...choice, value: `timesheet ${choice.value}` }))
+  }
+
   if (!trimmed || !input.includes(" ")) {
     const choices = [
       { label: "timesheet", value: "timesheet", description: "Read one project's personal daily timesheet" },
-      ...DATE_COMPLETIONS,
-      { label: "help", value: "help", description: "Show command forms and date options" },
+      { label: "help", value: "help", description: "Show the timesheet command form and date options" },
     ]
     return choices.filter(choice => choice.value.startsWith(trimmed.toLowerCase()))
   }
 
   const first = trimmed.split(/\s+/, 1)[0].toLowerCase()
-  if (first !== "timesheet") {
-    if (!DATE_PATTERN.test(first) || trimmed.split(/\s+/).includes("--task")) return null
-    return trimmed.split(/\s+/).length > 1 ? completionForFlag(input, { "--task": TIMESHEET_FLAGS["--task"] }) : null
-  }
+  if (first !== "timesheet") return null
 
   const words = trimmed.split(/\s+/)
+  if (words.some(word => ["--help", "-h"].includes(word))) return null
   const optionIndex = words.findIndex((word, index) => index > 0 && word.startsWith("--"))
   const positionals = words.slice(1, optionIndex === -1 ? words.length : optionIndex)
   if (optionIndex === -1 && (positionals.length < 1 || (!input.endsWith(" ") && positionals.length === 1))) {
     const partial = input.endsWith(" ") ? "" : positionals.at(-1) ?? ""
     const base = [first, ...positionals.slice(0, input.endsWith(" ") ? positionals.length : -1)]
-    return DATE_COMPLETIONS
+    return dateCompletions()
       .filter(choice => choice.value.startsWith(partial.toLowerCase()))
       .map(choice => ({ ...choice, value: [...base, choice.value].join(" ") }))
   }
+
+  if (positionals.length !== 1 || !DATE_PATTERN.test(positionals[0])) return null
 
   const flags = !words.includes("--project")
     ? { "--project": TIMESHEET_FLAGS["--project"], "--help": TIMESHEET_FLAGS["--help"] }
@@ -416,30 +459,33 @@ export function parseCommandArguments(input) {
   return words
 }
 
+function isTimesheetForm(words, allowIncomplete = false) {
+  if (words[0] !== "timesheet") return false
+  if (allowIncomplete && words.length === 1) return true
+  if (!DATE_PATTERN.test(words[1])) return false
+  if (allowIncomplete && words.length === 2) return true
+  if (words[2] !== "--project" || !words[3] || words[3].startsWith("--")) return false
+  if (words.length === 4) return true
+  return words.length === 6 && words[4] === "--task" && Boolean(words[5]) && !words[5].startsWith("--")
+}
+
 export function parseHarvestWorklogArguments(args) {
   const input = args.trim()
   if (input === "help") return { help: true }
 
   const words = parseCommandArguments(input)
   if (!words || words.length === 0) return null
-  if (words[0] === "timesheet") {
-    if (words.includes("--help") || words.includes("-h")) return { argv: words }
-    return DATE_PATTERN.test(words[1]) && hasFlagValue(words, "--project") ? { argv: words } : null
-  }
-  if (!DATE_PATTERN.test(words[0])) return null
-
-  const taskIndex = words.indexOf("--task")
-  if (taskIndex !== -1 && (taskIndex < 2 || taskIndex === words.length - 1 || words.indexOf("--task", taskIndex + 1) !== -1)) return null
-  const project = words.slice(1, taskIndex === -1 ? words.length : taskIndex).join(" ")
-  if (!project) return null
-  const task = taskIndex === -1 ? undefined : words.slice(taskIndex + 1).join(" ")
-  return { argv: timesheetArguments({ date: words[0], project, task }) }
+  const help = ["--help", "-h"].includes(words.at(-1))
+  const form = help ? words.slice(0, -1) : words
+  return isTimesheetForm(form, help) ? { argv: words } : null
 }
 
 export default function harvestTimeExtension(pi, options = {}) {
   pi.setLabel?.("Harvest Worklog")
-  const command = options.command ?? "harvest-worklog"
+  const command = normalizeCommand(options.command)
   const run = options.run ?? runCommand
+  const projectTimeMappings = options.projectTimeMappings?.trim() || "{}"
+  const projectTimeLogPath = options.projectTimeLogPath?.trim() || ""
   pi.registerCommand("harvest-worklog", {
     description: "Show one project's daily Harvest timesheet",
     getArgumentCompletions: harvestWorklogArgumentCompletions,
@@ -460,31 +506,31 @@ export default function harvestTimeExtension(pi, options = {}) {
       pi.sendMessage({ customType: "harvest-worklog-timesheet", content: output, display: true, attribution: "assistant" }, { triggerTurn: false })
     },
   })
-  pi.registerTool(createTimeAggregateTool(pi.zod.z, { command: options.command }))
+  pi.registerTool(createTimeAggregateTool(pi.zod.z, { command }))
   pi.registerTool(createTimesheetTool(pi.zod.z, { command, run }))
   pi.registerTool(createTimeOffTool(pi.zod.z, {
-    command: options.command,
+    command,
     defaultHours: options.defaultHours,
     holidayRegions: options.holidayRegions,
   }))
   pi.registerTool(createProjectTimeTool(pi.zod.z, {
-    command: options.command,
-    projectTimeMappings: options.projectTimeMappings,
-    projectTimeLogPath: options.projectTimeLogPath,
+    command,
+    projectTimeMappings,
+    projectTimeLogPath,
   }, { dryRun: true }))
   pi.registerTool(createProjectTimeTool(pi.zod.z, {
-    command: options.command,
-    projectTimeMappings: options.projectTimeMappings,
-    projectTimeLogPath: options.projectTimeLogPath,
+    command,
+    projectTimeMappings,
+    projectTimeLogPath,
   }, { dryRun: false }))
   pi.registerTool(createProjectTimeTransformTool(pi.zod.z, {
-    command: options.command,
-    projectTimeMappings: options.projectTimeMappings,
-    projectTimeLogPath: options.projectTimeLogPath,
+    command,
+    projectTimeMappings,
+    projectTimeLogPath,
   }, { record: false }))
   pi.registerTool(createProjectTimeTransformTool(pi.zod.z, {
-    command: options.command,
-    projectTimeMappings: options.projectTimeMappings,
-    projectTimeLogPath: options.projectTimeLogPath,
+    command,
+    projectTimeMappings,
+    projectTimeLogPath,
   }, { record: true }))
 }
