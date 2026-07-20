@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+version="$(node -p 'require("./package.json").version')"
+
+omp plugin uninstall harvest-worklog
+omp plugin install --force github:klondikemarlen/harvest-worklog
+plugins="$(omp plugin list)"
+if [[ "$plugins" != *"harvest-worklog@$version"* ]]; then
+  printf 'Expected harvest-worklog@%s after install.\n%s\n' "$version" "$plugins" >&2
+  exit 1
+fi
+
+printf 'Verified harvest-worklog@%s. Starting fresh OMP for slash-command QA.\n' "$version"
+printf 'Existing OMP sessions must also be restarted.\n'
+exec omp --no-session --no-tools --cwd "$root"
