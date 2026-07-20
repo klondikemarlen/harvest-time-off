@@ -178,3 +178,24 @@ test("previews JSON transforms and records activity entries sequentially", async
   assert.deepEqual(calls.map(([, args]) => args.at(-1)), ["--activity-entry", "--activity-entry"])
   assert.deepEqual(JSON.parse(recordResult.content[0].text).results.map(result => result.code), [0, 0])
 })
+
+test("does not propose activity groups that round to zero Harvest hours", () => {
+  const startAtMs = new Date(2026, 6, 17, 9).getTime()
+  const plan = projectTimeTransform(
+    {
+      entries: [{
+        project: "Harvest API",
+        repositoryId: "repo",
+        sourceKind: "human_active",
+        activity: "implementation",
+        startAtMs,
+        endAtMs: startAtMs + 10_000,
+      }],
+    },
+    parseProjectTimeMappings({ "Harvest API": { project: "Internal", task: "Development" } }),
+    { from: "2026-07-17", to: "2026-07-17", applyMappings: true },
+  )
+
+  assert.equal(plan.groups[0].hours, 0)
+  assert.deepEqual(plan.entries, [])
+})

@@ -207,6 +207,7 @@ function mappedEntries(groups, mappings, unmapped) {
         sources,
       }
     })
+    .filter(entry => entry.hours > 0)
     .sort((left, right) => left.spentDate.localeCompare(right.spentDate) || left.project.localeCompare(right.project) || left.task.localeCompare(right.task) || left.activity.localeCompare(right.activity))
 }
 
