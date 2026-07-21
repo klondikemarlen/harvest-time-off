@@ -1,0 +1,72 @@
+{
+  "provenance": "Synthetic composites informed by structural patterns in historical worklogs. No source note, organization, person, identifier, URL, date, or duration is preserved.",
+  "futureSchemaFields": "description and provenance are documentation-only until omp-project-time#92 defines the persisted record contract.",
+  "scenarios": [
+    {
+      "id": "multi-topic-programming",
+      "project": "Example Systems",
+      "spentDate": "2030-03-19",
+      "mapping": { "project": "Example Systems", "task": "Programming" },
+      "groups": [
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Configuration", "description": "Implemented validation for a configurable workflow and covered invalid-state errors.", "milliseconds": 3600000, "provenance": "user" },
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Interface development", "description": "Built an approval panel and simplified the supporting form flow.", "milliseconds": 5400000, "provenance": "user" },
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Regression testing", "description": "Fixed flaky integration checks and documented a deployment safeguard.", "milliseconds": 2700000, "provenance": "user" }
+      ],
+      "expectedLegacy": "Example Systems · Tue, Mar 19 · 3:15\n\nProgramming\n- Configuration\n- Interface development\n- Regression testing",
+      "expectedNarrativesForFutureSchema": ["Implemented validation for a configurable workflow and covered invalid-state errors.", "Built an approval panel and simplified the supporting form flow.", "Fixed flaky integration checks and documented a deployment safeguard."]
+    },
+    {
+      "id": "deduplicate-identical-narrative",
+      "project": "Example Systems",
+      "spentDate": "2030-03-19",
+      "mapping": { "project": "Example Systems", "task": "Programming" },
+      "groups": [
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Regression testing", "description": "Investigated and stabilized an intermittent integration check.", "milliseconds": 1800000, "provenance": "generated" },
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Regression testing", "description": "Investigated and stabilized an intermittent integration check.", "milliseconds": 1800000, "provenance": "generated" }
+      ],
+      "expectedLegacy": "Example Systems · Tue, Mar 19 · 1:00\n\nProgramming\n- Regression testing",
+      "expectedNarrativesForFutureSchema": ["Generated: Investigated and stabilized an intermittent integration check."]
+    },
+    {
+      "id": "legacy-missing-description",
+      "project": "Example Systems",
+      "spentDate": "2030-03-19",
+      "mapping": { "project": "Example Systems", "task": "Programming" },
+      "groups": [
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "Maintenance", "milliseconds": 900000, "provenance": "legacy" },
+        { "spentDate": "2030-03-19", "sourceKind": "agent_turn_elapsed", "activity": "Maintenance", "description": "Generated text that must not appear in the worklog.", "milliseconds": 900000, "provenance": "generated" }
+      ],
+      "expectedLegacy": "Example Systems · Tue, Mar 19 · 0:15\n\nProgramming\n- Maintenance",
+      "expectedNarrativesForFutureSchema": ["Maintenance"]
+    },
+    {
+      "id": "generic-activity-fallback",
+      "project": "Example Systems",
+      "spentDate": "2030-03-19",
+      "mapping": { "project": "Example Systems", "task": "Programming" },
+      "groups": [
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "unlabelled", "milliseconds": 600000, "provenance": "legacy" }
+      ],
+      "expectedLegacy": "Example Systems · Tue, Mar 19 · 0:10\n\nProgramming\n- unlabelled"
+    },
+    {
+      "id": "missing-activity-fallback",
+      "project": "Example Systems",
+      "spentDate": "2030-03-19",
+      "mapping": { "project": "Example Systems", "task": "Programming" },
+      "groups": [
+        { "spentDate": "2030-03-19", "sourceKind": "human_active", "activity": "", "milliseconds": 300000, "provenance": "legacy" }
+      ],
+      "expectedLegacy": "Example Systems · Tue, Mar 19 · 0:05\n\nProgramming\n- Unlabelled"
+    },
+    {
+      "id": "mixed-task-day",
+      "fixtureStatus": "future-schema-only",
+      "intervals": [
+        { "task": "Meeting", "activity": "Planning", "description": "Reviewed delivery risks and agreed on the next milestone.", "durationMs": 2700000, "provenance": "user" },
+        { "task": "Programming", "activity": "Implementation", "description": "Applied the agreed workflow changes and added focused coverage.", "durationMs": 4500000, "provenance": "user" }
+      ],
+      "expectedTaskGroups": ["Meeting", "Programming"]
+    }
+  ]
+}
