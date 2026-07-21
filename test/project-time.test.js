@@ -1,8 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { readFile } from "node:fs/promises"
 
 import { createProjectTimeTool, createProjectTimeTransformTool, workEntryArguments } from "../index.js"
 import { formatProjectTimeTimesheet, parseProjectTimeMappings, projectTimeEntries, projectTimeTransform, resolveProjectTimeDate } from "../project-time.js"
+
+const narrativeFixtures = JSON.parse(await readFile(new URL("./fixtures/narrative-worklog-scenarios.json", import.meta.url), "utf8"))
 
 const schema = () => ({
   regex() { return this },
@@ -59,6 +62,16 @@ test("formats daily human activities as Harvest-style notes", () => {
     formatProjectTimeTimesheet({ groups: [] }, { project: "WRAP", spentDate: "2026-07-20" }),
     "WRAP · Mon, Jul 20 · 0:00\n\nActivities\nNo local Project Time sessions found for WRAP on 2026-07-20.",
   )
+})
+
+test("renders synthetic narrative worklog fixtures", () => {
+  for (const scenario of narrativeFixtures.scenarios.filter(scenario => scenario.expectedLegacy)) {
+    assert.equal(
+      formatProjectTimeTimesheet({ groups: scenario.groups }, scenario),
+      scenario.expectedLegacy,
+      scenario.id,
+    )
+  }
 })
 
 test("maps and splits Project Time sessions by local Harvest date", () => {
