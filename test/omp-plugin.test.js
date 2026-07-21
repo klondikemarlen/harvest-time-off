@@ -276,6 +276,7 @@ test("renders local Project Time without calling Harvest", async () => {
   const messages = []
   const notifications = []
   const loads = []
+  let summaries = 0
   harvestTimeExtension({
     zod: { z },
     registerTool(tool) { tools.push(tool) },
@@ -298,7 +299,7 @@ test("renders local Project Time without calling Harvest", async () => {
     },
     generateDailySummary: async records => {
       assert.deepEqual(records, [{ activity: "Fix test suite", durationMilliseconds: 24_040_000 }])
-      return "- Fixed the test suite."
+      return summaries++ === 0 ? "- Fixed the test suite." : undefined
     },
     run: async (...args) => {
       calls.push(args)
@@ -326,6 +327,9 @@ test("renders local Project Time without calling Harvest", async () => {
   }])
   assert.equal(calls.length, 0)
   assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest destination: WRAP (YG - SIS) / Programming\n\nActivity summary\n- Fix test suite · 6:40\n- Prototype template v3 UI · 0:05\n\nWorklog draft (generated from local records)\n- Fixed the test suite.")
+  await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
+  assert.match(messages[1].message.content, /Source: local OMP Project Time \(not Harvest\)/)
+  assert.doesNotMatch(messages[1].message.content, /Worklog draft/)
 
   await command.handler("time-off --help", { cwd: "/tmp", ui })
   assert.equal(calls.length, 0)
