@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "tmpdir"
 require "minitest/autorun"
 require "json"
 require "stringio"
@@ -414,6 +415,87 @@ class HarvestWorklogTest < Minitest::Test
       By project/task:
         none
     OUTPUT
+  end
+
+  def test_reconcile_cli_reports_harvest_benchmark_and_local_overlap
+    start_at = Time.local(2026, 7, 17, 9).to_f * 1000
+    output = StringIO.new
+    client = AggregateClient.new([{ "time_entries" => [
+      { "spent_date" => "2026-07-17", "hours" => 7, "project" => { "name" => "WRAP" }, "task" => { "name" => "Programming" } }
+    ], "next_page" => nil }])
+
+    with_project_time_log([
+      { "project" => "wrap", "sourceKind" => "human_active", "startAtMs" => start_at, "endAtMs" => start_at + 7_200_000 },
+      { "project" => "wrap", "sourceKind" => "human_active", "startAtMs" => start_at + 5_400_000, "endAtMs" => start_at + 9_000_000 },
+      { "project" => "wrap", "sourceKind" => "agent_turn_elapsed", "startAtMs" => start_at, "endAtMs" => start_at + 25_200_000 }
+    ]) do |log_path|
+      status = HarvestWorklog::ReconcileCLI.run(
+        ["2026-07-17", "--project", "wrap", "--harvest-project", "WRAP", "--task", "Programming"],
+        output:,
+        client:,
+        log_path:
+      )
+
+      assert_equal 0, status
+    end
+
+    assert_equal <<~OUTPUT, output.string
+      2026-07-17 reconciliation
+      Manual Harvest: 7h 0m 0s (1 entry)
+      Local OMP Project Time wrap:
+        Raw intervals: 3h 0m 0s
+        Non-overlapping union: 2h 30m 0s
+        Concurrent overlap: 0h 30m 0s
+      Harvest minus local raw: +4h 0m 0s
+      Harvest minus local union: +4h 30m 0s
+      Verdict: Manual Harvest is the benchmark. This read-only comparison creates or changes no entries.
+    OUTPUT
+  end
+
+  def test_reconcile_cli_reports_empty_harvest_and_local_data
+    output = StringIO.new
+
+    with_project_time_log([]) do |log_path|
+      status = HarvestWorklog::ReconcileCLI.run(
+        ["2026-07-17", "--project", "wrap", "--harvest-project", "WRAP"],
+        output:,
+        client: AggregateClient.new([{ "time_entries" => [], "next_page" => nil }]),
+        log_path:
+      )
+
+      assert_equal 0, status
+    end
+
+    assert_includes output.string, "Manual Harvest: 0h 0m 0s (0 entries)"
+    assert_includes output.string, "Raw intervals: 0h 0m 0s"
+    assert_includes output.string, "Harvest minus local union: +0h 0m 0s"
+  end
+
+  def test_reconcile_cli_reports_a_malformed_local_log
+    error = StringIO.new
+
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "time-log.json")
+      File.write(path, JSON.generate([]))
+      status = HarvestWorklog::ReconcileCLI.run(
+        ["2026-07-17", "--project", "wrap", "--harvest-project", "WRAP"],
+        error:,
+        client: AggregateClient.new([{ "time_entries" => [], "next_page" => nil }]),
+        log_path: path
+      )
+
+      assert_equal 1, status
+    end
+
+    assert_includes error.string, "OMP Project Time log is missing an entries array"
+  end
+
+  def with_project_time_log(entries)
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "time-log.json")
+      File.write(path, JSON.generate({ "entries" => entries }))
+      yield path
+    end
   end
 
   class FakeClient

@@ -144,6 +144,7 @@ export function projectTimeEntries(state, mappings, { from, to }) {
   let unmapped = 0
 
   for (const session of state.entries) {
+    if (session.sourceKind !== "human_active") continue
     const mapping = mappings.get(session.project)
     if (!mapping) {
       unmapped += 1
@@ -177,6 +178,7 @@ export function projectTimeEntries(state, mappings, { from, to }) {
   }
 
   return {
+    sourceKind: "human_active",
     entries: [...grouped.values()]
       .map(entry => ({ ...entry, hours: Math.round((entry.milliseconds / HOUR_MS) * 100) / 100 }))
       .filter(entry => entry.hours > 0)
@@ -193,7 +195,7 @@ export function projectTimeTransform(
     to,
     repositoryId,
     project,
-    sourceKind,
+    sourceKind = "human_active",
     applyMappings = false,
   },
 ) {
@@ -213,6 +215,7 @@ export function projectTimeTransform(
       excluded.push({ ...row, reason: "invalid_interval" })
       continue
     }
+
 
     const reasons = []
     if (repositoryId !== undefined && session.repositoryId !== repositoryId) reasons.push("repository_id")
@@ -257,6 +260,7 @@ export function projectTimeTransform(
   const entries = applyMappings ? mappedEntries(groups, mappings, unmapped) : []
 
   return {
+    sourceKind,
     groups,
     entries,
     unmapped: unmapped.sort(compareGroups),

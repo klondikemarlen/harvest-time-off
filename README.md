@@ -26,6 +26,7 @@ harvest-worklog work-entry DATE --project NAME --task NAME --hours HOURS --notes
 harvest-worklog work-entry DATE --project-id ID --task-id ID --hours HOURS --notes NOTES [options]
 harvest-worklog aggregate FROM TO [--project NAME] [--task NAME]
 harvest-worklog timesheet DATE --project NAME [--task NAME]
+harvest-worklog reconcile DATE --project PROJECT --harvest-project NAME [--task NAME]
 ```
 
 ### Time off
@@ -93,25 +94,26 @@ Configure `projectTimeMappings` with the recorded OMP Project Time project name 
 }
 ```
 
-`harvest_preview_project_time_entries` reads the configured time log, splits sessions across local dates, generates descriptions from the project and repository, and checks Harvest for existing or locked entries without writing. `harvest_record_project_time_entries` performs the same preflight then creates only new entries; OMP treats it as a write requiring approval. Unmapped sessions are reported and never written.
+`harvest_preview_project_time_entries` reads only `human_active` sessions from the configured time log, splits them across local dates, reports that source policy, generates descriptions from the project and repository, and checks Harvest for existing or locked entries without writing. `harvest_record_project_time_entries` performs the same preflight then creates only new entries; OMP treats it as a write requiring approval. Unmapped sessions are reported and never written.
 
 ### Activity transforms
 
-`harvest_preview_project_time_transforms` emits deterministic JSON for local raw intervals. It accepts an inclusive date range and optional exact `repositoryId`, `project`, and `sourceKind` filters; each matching interval is split by local date and grouped by activity, with missing labels reported as `unlabelled`. Set `applyMappings` to include configured Harvest project/task mappings. The output reports `groups`, proposed mapped `entries`, and any `unmapped` or `excluded` rows.
+`harvest_preview_project_time_transforms` emits deterministic JSON for local raw intervals. It accepts an inclusive date range and optional exact `repositoryId`, `project`, and `sourceKind` filters; each matching interval is split by local date and grouped by activity, with missing labels reported as `unlabelled`. It defaults to `human_active` and returns the effective top-level `sourceKind`; selecting `agent_turn_elapsed` requires an explicit source-kind request. Set `applyMappings` to include configured Harvest project/task mappings. The output reports `groups`, proposed mapped `entries`, and any `unmapped` or `excluded` rows.
 
 `harvest_record_project_time_transforms` is a separate approval-gated write step. It always applies configured mappings and records the reviewed activity entries through the existing locked and duplicate preflight. Different activity labels may share a date/project/task; rerunning the same activity label is skipped, as are locked or unrelated existing entries.
 
-## Reconciling WRAP hours with manual entries
+## Daily reconciliation
 
-Use a closed date range and record the expected OMP Project Time and manually entered hours for each day. Preview OMP entries first, then compare the final Harvest total for each day:
+`reconcile` compares one local Project Time project against the manual Harvest total for one date. It reads only local `human_active` intervals, reports the raw duration, non-overlapping union, concurrent overlap, and both Harvest-minus-local deltas. It never creates or changes Harvest entries: manual Harvest is the benchmark.
 
 ```bash
-harvest-worklog aggregate FROM TO \
-  --project WRAP \
+harvest-worklog reconcile 2026-07-21 \
+  --project wrap \
+  --harvest-project WRAP \
   --task Programming
 ```
 
-OMP-created entries use an `OMP Project Time:` note; use a `Manual reconciliation:` note for manual entries while testing. Inspect the Harvest entry details to distinguish their source—the aggregate intentionally combines all matching entries.
+Empty local or Harvest data is reported as zero, so this command is suitable for daily capture checks while manual tracking remains authoritative. [#51](https://github.com/klondikemarlen/harvest-worklog/issues/51) separately ensures ordinary automatic exports use only the same `human_active` evidence.
 
 The standard work-entry importer allows only one entry for a date, project, and task. If a manual `WRAP / Programming` entry exists for a date, importing ordinary OMP Project Time for that same mapping skips it rather than adding hours. Activity transforms are the exception: distinct activity labels can create separate entries while the same label, locked entries, and unrelated manual entries are still skipped. Reconcile ordinary entries as either OMP or manual hours, not their sum.
 

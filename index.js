@@ -176,11 +176,13 @@ export function createProjectTimeTool(
           mappings,
           logPath: projectTimeLogPath || undefined,
         })
+        const sourceKind = plan.sourceKind ?? "human_active"
+        const sourcePolicy = `Source policy: ${sourceKind} local Project Time intervals only.`
         if (plan.entries.length === 0) {
           const unmapped = plan.unmapped ? ` ${plan.unmapped} unmapped session(s) were skipped.` : ""
           return {
-            content: [{ type: "text", text: `No mapped OMP Project Time sessions found.${unmapped}` }],
-            details: { entries: [], unmapped: plan.unmapped },
+            content: [{ type: "text", text: `${sourcePolicy}\nNo mapped OMP Project Time sessions found.${unmapped}` }],
+            details: { sourceKind, entries: [], unmapped: plan.unmapped },
           }
         }
 
@@ -196,8 +198,8 @@ export function createProjectTimeTool(
         }).join("\n")
         const unmapped = plan.unmapped ? `\nSkipped ${plan.unmapped} unmapped session(s).` : ""
         return {
-          content: [{ type: "text", text: `${output}${unmapped}` }],
-          details: { entries: plan.entries, unmapped: plan.unmapped, results },
+          content: [{ type: "text", text: `${sourcePolicy}\n${output}${unmapped}` }],
+          details: { sourceKind, entries: plan.entries, unmapped: plan.unmapped, results },
         }
       } catch (error) {
         return {
