@@ -452,6 +452,10 @@ class HarvestWorklogTest < Minitest::Test
     OUTPUT
   end
 
+  def test_reconcile_cli_rounds_milliseconds_to_nearest_second
+    assert_equal "1h 0m 1s", HarvestWorklog::ReconcileCLI.duration(3_600_600)
+  end
+
   def test_reconcile_cli_reports_empty_harvest_and_local_data
     output = StringIO.new
 

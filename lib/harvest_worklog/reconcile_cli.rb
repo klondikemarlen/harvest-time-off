@@ -106,7 +106,7 @@ module HarvestWorklog
     end
 
     def self.duration(milliseconds)
-      seconds = (milliseconds / 1000).round
+      seconds = (milliseconds / 1000.0).round
       "%dh %dm %ds" % [seconds / 3600, seconds / 60 % 60, seconds % 60]
     end
   end
