@@ -238,11 +238,15 @@ test("maps and splits Project Time sessions by local Harvest date", () => {
   const endAtMs = new Date(2026, 6, 18, 1, 30).getTime()
 
   const plan = projectTimeEntries(
-    { entries: [{ project: "Harvest API", repositoryId: "klondikemarlen/harvest-api-v2", startAtMs, endAtMs }] },
+    { entries: [
+      { project: "Harvest API", repositoryId: "klondikemarlen/harvest-api-v2", sourceKind: "human_active", startAtMs, endAtMs },
+      { project: "Harvest API", repositoryId: "klondikemarlen/harvest-api-v2", sourceKind: "agent_turn_elapsed", startAtMs, endAtMs: endAtMs + 3_600_000 },
+    ] },
     mappings,
     { from: "2026-07-17", to: "2026-07-18" },
   )
 
+  assert.equal(plan.sourceKind, "human_active")
   assert.equal(plan.unmapped, 0)
   assert.deepEqual(
     plan.entries.map(({ spentDate, project, task, hours }) => ({ spentDate, project, task, hours })),
@@ -286,6 +290,8 @@ test("previews mapped Project Time entries without writing", async () => {
     { cwd: "/tmp", signal: undefined },
   ]])
   assert.match(result.content[0].text, /Would create 2026-07-17/)
+  assert.match(result.content[0].text, /Source policy: human_active local Project Time intervals only\./)
+  assert.equal(result.details.sourceKind, "human_active")
   assert.match(result.content[0].text, /Skipped 1 unmapped session/)
 
   const record = createProjectTimeTool(z, {}, { dryRun: false })
@@ -342,6 +348,29 @@ test("filters, groups, maps, and reports Project Time transforms deterministical
     { activity: "invalid", reason: "invalid_interval" },
   ])
   assert.equal(JSON.stringify(plan), JSON.stringify(projectTimeTransform(state, mappings, options)))
+})
+
+test("defaults transforms to human-active intervals", () => {
+  const startAtMs = new Date(2026, 6, 17, 9).getTime()
+  const mappings = parseProjectTimeMappings({ "Harvest API": { project: "Internal", task: "Development" } })
+  const state = { entries: [{ project: "Harvest API", repositoryId: "repo", sourceKind: "agent_turn_elapsed", activity: "implementation", startAtMs, endAtMs: startAtMs + 3_600_000 }] }
+  const defaultPlan = projectTimeTransform(
+    state,
+    mappings,
+    { from: "2026-07-17", to: "2026-07-17", applyMappings: true },
+  )
+  const explicitPlan = projectTimeTransform(
+    state,
+    mappings,
+    { from: "2026-07-17", to: "2026-07-17", sourceKind: "agent_turn_elapsed", applyMappings: true },
+  )
+
+  assert.equal(defaultPlan.sourceKind, "human_active")
+  assert.equal(explicitPlan.sourceKind, "agent_turn_elapsed")
+  assert.deepEqual(defaultPlan.groups, [])
+  assert.deepEqual(defaultPlan.entries, [])
+  assert.deepEqual(defaultPlan.excluded.map(({ reason }) => reason), ["source_kind"])
+  assert.deepEqual(explicitPlan.entries.map(({ hours }) => hours), [1])
 })
 
 test("previews JSON transforms and records activity entries sequentially", async () => {
