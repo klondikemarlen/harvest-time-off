@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import { approvedProjectTimeMappings, defaultProjectTimeLogPath, formatProjectTimeTimesheet, inferProjectTimeMappings, loadProjectTimeEntries, loadProjectTimeTransform, parseProjectTimeMappings, projectTimeProjectNames, resolveProjectTimeDate } from "./project-time.js"
 
 function normalizeHolidayRegions(regions) {
@@ -499,11 +499,25 @@ function completionForProject(input, projects) {
   return choices.length > 0 ? choices : null
 }
 
-function loadProjectTimeProjectNames(logPath) {
-  try {
-    return projectTimeProjectNames(JSON.parse(readFileSync(logPath || defaultProjectTimeLogPath(), "utf8")))
-  } catch {
-    return []
+export function createProjectTimeProjectNamesLoader({ read = readFileSync, stat = statSync } = {}) {
+  let cachedPath
+  let cachedStamp
+  let cachedProjects = []
+
+  return logPath => {
+    const path = logPath || defaultProjectTimeLogPath()
+    try {
+      const { mtimeMs, size } = stat(path)
+      const stamp = `${mtimeMs}:${size}`
+      if (cachedPath === path && cachedStamp === stamp) return cachedProjects
+
+      cachedProjects = projectTimeProjectNames(JSON.parse(read(path, "utf8")))
+      cachedPath = path
+      cachedStamp = stamp
+      return cachedProjects
+    } catch {
+      return []
+    }
   }
 }
 
@@ -577,7 +591,7 @@ export default function harvestTimeExtension(pi, options = {}) {
   const projectTimeMappings = options.projectTimeMappings?.trim() || "{}"
   const projectTimeLogPath = options.projectTimeLogPath?.trim() || ""
   const loadTransform = options.loadProjectTimeTransform ?? loadProjectTimeTransform
-  const loadProjects = options.loadProjectTimeProjectNames ?? loadProjectTimeProjectNames
+  const loadProjects = options.loadProjectTimeProjectNames ?? createProjectTimeProjectNamesLoader()
   const summarize = options.generateDailySummary ?? generateDailySummary
   pi.registerCommand("harvest-worklog", {
     description: "Show one project's local OMP Project Time",

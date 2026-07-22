@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import harvestTimeExtension, { aggregateArguments, createProjectTimeMappingReviewTool, createTimeAggregateTool, createTimeOffTool, createTimesheetTool, harvestWorklogArgumentCompletions, parseCommandArguments, parseHarvestWorklogArguments, timeOffArguments, timesheetArguments } from "../index.js"
+import harvestTimeExtension, { aggregateArguments, createProjectTimeMappingReviewTool, createProjectTimeProjectNamesLoader, createTimeAggregateTool, createTimeOffTool, createTimesheetTool, harvestWorklogArgumentCompletions, parseCommandArguments, parseHarvestWorklogArguments, timeOffArguments, timesheetArguments } from "../index.js"
 
 const schema = () => ({
   regex() { return this },
@@ -264,6 +264,25 @@ test("completes the explicit timesheet hierarchy contextually", () => {
   assert.equal(harvestWorklogArgumentCompletions("timesheet today extra "), null)
   assert.equal(harvestWorklogArgumentCompletions("today "), null)
   assert.equal(harvestWorklogArgumentCompletions("aggregate "), null)
+})
+
+test("caches local project names until the log changes", () => {
+  let reads = 0
+  let mtimeMs = 1
+  const loader = createProjectTimeProjectNamesLoader({
+    stat: () => ({ mtimeMs, size: 10 }),
+    read: () => {
+      reads += 1
+      return JSON.stringify({ entries: [{ sourceKind: "human_active", project: "wrap" }] })
+    },
+  })
+
+  assert.deepEqual(loader("/tmp/project-time.json"), ["wrap"])
+  assert.deepEqual(loader("/tmp/project-time.json"), ["wrap"])
+  assert.equal(reads, 1)
+  mtimeMs = 2
+  assert.deepEqual(loader("/tmp/project-time.json"), ["wrap"])
+  assert.equal(reads, 2)
 })
 
 test("parses quoted explicit timesheet arguments", () => {
