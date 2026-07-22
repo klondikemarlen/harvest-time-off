@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import harvestTimeExtension, { aggregateArguments, createProjectTimeMappingReviewTool, createProjectTimeProjectNamesLoader, createTimeAggregateTool, createTimeOffTool, createTimesheetTool, harvestWorklogArgumentCompletions, parseCommandArguments, parseHarvestWorklogArguments, timeOffArguments, timesheetArguments } from "../index.js"
+import harvestTimeExtension, { aggregateArguments, createProjectTimeMappingReviewTool, createProjectTimeProjectNamesLoader, createTimeAggregateTool, createTimeOffTool, createTimesheetTool, harvestWorklogArgumentCompletions, parseCommandArguments, parseDailySummary, parseHarvestWorklogArguments, timeOffArguments, timesheetArguments } from "../index.js"
 
 const schema = () => ({
   regex() { return this },
@@ -285,6 +285,19 @@ test("caches local project names until the log changes", () => {
   assert.equal(reads, 2)
 })
 
+test("validates AI activity category responses", () => {
+  const activities = ["Build", "Review"]
+  const generated = parseDailySummary('{"categories":["Implementation","Review"],"worklog":["Built the feature.","Reviewed the change."]}', activities)
+  assert.deepEqual([...generated.categories], [["Build", "Implementation"], ["Review", "Review"]])
+  assert.equal(generated.summary, "- Built the feature.\n- Reviewed the change.")
+  assert.equal(parseDailySummary("not JSON", activities), undefined)
+  assert.equal(parseDailySummary('{"categories":["Implementation"]}', activities), undefined)
+  assert.equal(parseDailySummary('{"categories":[""]}', ["Build"]), undefined)
+  assert.equal(parseDailySummary(JSON.stringify({ categories: ["x".repeat(81)] }), ["Build"]), undefined)
+  assert.equal(parseDailySummary('{"categories":["a","b","c","d","e","f"]}', ["1", "2", "3", "4", "5", "6"]), undefined)
+  assert.deepEqual([...parseDailySummary('{"categories":["Implementation"]}', ["Build"]).categories], [["Build", "Implementation"]])
+})
+
 test("parses quoted explicit timesheet arguments", () => {
   assert.deepEqual(
     parseCommandArguments("timesheet today --project 'Ice Fog Analytics'"),
@@ -333,7 +346,10 @@ test("renders local Project Time without calling Harvest", async () => {
     loadProjectTimeTransform: async options => {
       loads.push(options)
       return {
-        summaryRecords: [{ activity: "Fix test suite", durationMilliseconds: 24_040_000 }],
+        summaryRecords: [
+          { activity: "Fix test suite", durationMilliseconds: 24_040_000 },
+          { activity: "Prototype template v3 UI", durationMilliseconds: 300_000 },
+        ],
         groups: [
           { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Fix test suite", milliseconds: 24_040_000 },
           { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", activity: "Fix test suite", milliseconds: 1_789_000 },
@@ -342,8 +358,13 @@ test("renders local Project Time without calling Harvest", async () => {
       }
     },
     generateDailySummary: async records => {
-      assert.deepEqual(records, [{ activity: "Fix test suite", durationMilliseconds: 24_040_000 }])
-      return summaries++ === 0 ? "- Fixed the test suite." : undefined
+      assert.deepEqual(records, [
+        { activity: "Fix test suite", durationMilliseconds: 24_040_000 },
+        { activity: "Prototype template v3 UI", durationMilliseconds: 300_000 },
+      ])
+      return summaries++ === 0
+        ? { categories: new Map([["Fix test suite", "Validation"], ["Prototype template v3 UI", "Design"]]), summary: "- Fixed the test suite." }
+        : undefined
     },
     run: async (...args) => {
       calls.push(args)
@@ -373,7 +394,7 @@ test("renders local Project Time without calling Harvest", async () => {
     logPath: "/tmp/project-time.json",
   }])
   assert.equal(calls.length, 0)
-  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest destination: WRAP (YG - SIS) / Programming\n\nActivity summary\n- Fix test suite · 6:40\n- Prototype template v3 UI · 0:05\n\nWorklog draft (generated from local records)\n- Fixed the test suite.")
+  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest destination: WRAP (YG - SIS) / Programming\n\nAI activity summary (from local records)\n- Validation · 6:40\n- Design · 0:05\n\nWorklog draft (generated from local records)\n- Fixed the test suite.")
   await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
   assert.match(messages[1].message.content, /Source: local OMP Project Time \(not Harvest\)/)
   assert.doesNotMatch(messages[1].message.content, /Worklog draft/)

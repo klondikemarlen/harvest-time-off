@@ -64,6 +64,30 @@ test("labels local activity data and separate Harvest destination", () => {
   )
 })
 
+test("sums exact local durations within AI activity categories", () => {
+  const groups = [
+    { activity: "Validate workflow", milliseconds: 1_200_000 },
+    { activity: "Fix validation test", milliseconds: 600_000 },
+    { activity: "Review policy", milliseconds: 900_000 },
+  ].map(group => ({ ...group, spentDate: "2026-07-20", sourceKind: "human_active" }))
+
+  assert.equal(
+    formatProjectTimeTimesheet(
+      { groups },
+      {
+        project: "wrap",
+        spentDate: "2026-07-20",
+        categories: new Map([
+          ["Validate workflow", "Validation"],
+          ["Fix validation test", "Validation"],
+          ["Review policy", "Review"],
+        ]),
+      },
+    ),
+    "wrap · Mon, Jul 20 · 0:45\nSource: local OMP Project Time (not Harvest)\n\nAI activity summary (from local records)\n- Validation · 0:30\n- Review · 0:15",
+  )
+})
+
 test("lists unique human-active local Project Time names", () => {
   assert.deepEqual(
     projectTimeProjectNames({
