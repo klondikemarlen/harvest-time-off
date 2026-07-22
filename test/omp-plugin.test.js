@@ -287,15 +287,27 @@ test("caches local project names until the log changes", () => {
 
 test("validates AI activity category responses", () => {
   const activities = ["Build", "Review"]
-  const generated = parseDailySummary('{"categories":["Implementation","Review"],"worklog":["Built the feature.","Reviewed the change."]}', activities)
+  const mappings = [
+    { activity: "Build", category: "Implementation" },
+    { activity: "Review", category: "Review" },
+  ]
+  const generated = parseDailySummary(JSON.stringify({ categories: mappings, worklog: ["Built the feature.", "Reviewed the change."] }), activities)
   assert.deepEqual([...generated.categories], [["Build", "Implementation"], ["Review", "Review"]])
   assert.equal(generated.summary, "- Built the feature.\n- Reviewed the change.")
+  const fenced = parseDailySummary('```json\n{"categories":{"Build":"Implementation","Review":"Review"}}\n```', activities)
+  assert.deepEqual([...fenced.categories], [["Build", "Implementation"], ["Review", "Review"]])
+  const manyActivities = Array.from({ length: 65 }, (_, index) => `Activity ${index + 1}`)
+  const highCardinality = parseDailySummary(JSON.stringify({ categories: manyActivities.map((activity, index) => ({ activity, category: ["Coordination", "Implementation", "Review", "Design", "Quality"][index % 5] })) }), manyActivities)
+  assert.equal(highCardinality.categories.size, 65)
+  assert.equal(parseDailySummary(JSON.stringify({ categories: [...manyActivities.map(activity => ({ activity, category: "Implementation" })), { activity: "ignored", category: "ignored" }] }), manyActivities), undefined)
   assert.equal(parseDailySummary("not JSON", activities), undefined)
-  assert.equal(parseDailySummary('{"categories":["Implementation"]}', activities), undefined)
-  assert.equal(parseDailySummary('{"categories":[""]}', ["Build"]), undefined)
-  assert.equal(parseDailySummary(JSON.stringify({ categories: ["x".repeat(81)] }), ["Build"]), undefined)
-  assert.equal(parseDailySummary('{"categories":["a","b","c","d","e","f"]}', ["1", "2", "3", "4", "5", "6"]), undefined)
-  assert.deepEqual([...parseDailySummary('{"categories":["Implementation"]}', ["Build"]).categories], [["Build", "Implementation"]])
+  assert.equal(parseDailySummary('{"categories":[{"activity":"Build","category":"Implementation"}]}', activities), undefined)
+  assert.equal(parseDailySummary('{"categories":[{"activity":"Build","category":""}]}', ["Build"]), undefined)
+  assert.equal(parseDailySummary(JSON.stringify({ categories: [{ activity: "Build", category: "x".repeat(81) }] }), ["Build"]), undefined)
+  assert.equal(parseDailySummary('{"categories":[{"activity":"1","category":"a"},{"activity":"2","category":"b"},{"activity":"3","category":"c"},{"activity":"4","category":"d"},{"activity":"5","category":"e"},{"activity":"6","category":"f"}]}', ["1", "2", "3", "4", "5", "6"]), undefined)
+  assert.deepEqual([...parseDailySummary('{"categories":[{"activity":"Build","category":"Implementation"}]}', ["Build"]).categories], [["Build", "Implementation"]])
+  assert.equal(parseDailySummary('{"categories":[{"activity":"Build","category":"Implementation"},{"activity":"Build","category":"Review"}]}', activities), undefined)
+  assert.equal(parseDailySummary('{"categories":[{"activity":"Build","category":"Implementation"},{"activity":"Unknown","category":"Review"}]}', activities), undefined)
 })
 
 test("parses quoted explicit timesheet arguments", () => {
