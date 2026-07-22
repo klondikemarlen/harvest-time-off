@@ -310,7 +310,7 @@ export function resolveProjectTimeDate(value, today = new Date()) {
   }
   return value
 }
-export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, summary }) {
+export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, categories, summary }) {
   const [year, month, day] = spentDate.split("-").map(Number)
   const groups = plan.groups.filter(group => group.spentDate === spentDate && group.sourceKind === "human_active")
   const heading = `${project} · ${formatShortDate(new Date(year, month - 1, day))} · ${formatDayTotal(groups.reduce((total, group) => total + group.milliseconds, 0))}`
@@ -321,14 +321,15 @@ export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, 
   const activities = new Map()
   for (const group of groups) {
     const activity = group.activity || "Unlabelled"
-    const summary = activities.get(activity) ?? { activity, milliseconds: 0 }
-    summary.milliseconds += group.milliseconds
-    activities.set(activity, summary)
+    const label = categories?.get(activity) ?? activity
+    activities.set(label, (activities.get(label) ?? 0) + group.milliseconds)
   }
-  const summaries = [...activities.values()].sort((left, right) => right.milliseconds - left.milliseconds || left.activity.localeCompare(right.activity))
-  const visible = summaries.slice(0, 5)
-  const hidden = summaries.slice(5)
-  const task = "Activity summary"
+  const summaries = [...activities]
+    .map(([label, milliseconds]) => ({ label, milliseconds }))
+    .sort((left, right) => right.milliseconds - left.milliseconds || left.label.localeCompare(right.label))
+  const visible = categories ? summaries : summaries.slice(0, 5)
+  const hidden = categories ? [] : summaries.slice(5)
+  const task = categories ? "AI activity summary (from local records)" : "Activity summary"
 
   const remainder = hidden.length === 1 ? "1 other activity" : `${hidden.length} other activities`
   if (summaries.length === 0) return [heading, ...provenance, "", task, `No local Project Time sessions found for ${project} on ${spentDate}.`].join("\n")
@@ -337,7 +338,7 @@ export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, 
     ...provenance,
     "",
     task,
-    ...visible.map(({ activity, milliseconds }) => `- ${activity} · ${formatDayTotal(milliseconds)}`),
+    ...visible.map(({ label, milliseconds }) => `- ${label} · ${formatDayTotal(milliseconds)}`),
     ...(hidden.length > 0 ? [`- ${remainder} · ${formatDayTotal(hidden.reduce((total, summary) => total + summary.milliseconds, 0))}`] : []),
     ...(summary ? ["", "Worklog draft (generated from local records)", summary] : []),
   ].join("\n")
