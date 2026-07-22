@@ -1,0 +1,5 @@
+{
+  "atomicGroups": [
+    ["package.json", "lib/harvest_worklog/version.rb"]
+  ]
+}
