@@ -108,7 +108,7 @@ function workstreamMappings(rawWorkstreams, activities) {
     if (!activities.includes(activity) || workstreams.has(activity) || !workstream || workstream.length > 100 || /[\r\n]/.test(workstream)) return undefined
     workstreams.set(activity, workstream)
   }
-  if (workstreams.size !== activities.length || new Set(workstreams.values()).size > 12) return undefined
+  if (workstreams.size !== activities.length || new Set(workstreams.values()).size > 8) return undefined
   return workstreams
 }
 

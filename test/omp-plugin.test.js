@@ -373,12 +373,18 @@ test("validates AI activity category responses", () => {
     activities,
     [longHarvestCategory],
   ))
+  const eightActivities = Array.from({ length: 8 }, (_, index) => `Work ${index + 1}`)
+  const eightWorkstreams = parseDailySummary(JSON.stringify({
+    categories: eightActivities.map(activity => ({ activity, category: "WRAP / Programming" })),
+    workstreams: eightActivities.map((activity, index) => ({ activity, workstream: `Stream ${index + 1}` })),
+  }), eightActivities, ["WRAP / Programming"])
+  assert.equal(eightWorkstreams.workstreams.size, 8)
   const nineActivities = Array.from({ length: 9 }, (_, index) => `Work ${index + 1}`)
   const nineWorkstreams = parseDailySummary(JSON.stringify({
     categories: nineActivities.map(activity => ({ activity, category: "WRAP / Programming" })),
     workstreams: nineActivities.map((activity, index) => ({ activity, workstream: `Stream ${index + 1}` })),
   }), nineActivities, ["WRAP / Programming"])
-  assert.equal(nineWorkstreams.workstreams.size, 9)
+  assert.equal(nineWorkstreams, undefined)
   const manyActivities = Array.from({ length: 65 }, (_, index) => `Activity ${index + 1}`)
   const highCardinality = parseDailySummary(JSON.stringify({ categories: manyActivities.map((activity, index) => ({ activity, category: ["Coordination", "Implementation", "Review", "Design", "Quality"][index % 5] })) }), manyActivities)
   assert.equal(highCardinality.categories.size, 65)
