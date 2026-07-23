@@ -296,6 +296,23 @@ test("validates AI activity category responses", () => {
   assert.equal(generated.summary, "- Built the feature.\n- Reviewed the change.")
   const fenced = parseDailySummary('```json\n{"categories":{"Build":"Implementation","Review":"Review"}}\n```', activities)
   assert.deepEqual([...fenced.categories], [["Build", "Implementation"], ["Review", "Review"]])
+  const harvestCategories = ["WRAP / Programming", "WRAP Support / Support"]
+  const harvestMapped = parseDailySummary(
+    JSON.stringify({ categories: [{ activity: "Build", category: "WRAP / Programming" }, { activity: "Review", category: "WRAP Support / Support" }] }),
+    activities,
+    harvestCategories,
+  )
+  assert.deepEqual([...harvestMapped.categories], [["Build", "WRAP / Programming"], ["Review", "WRAP Support / Support"]])
+  assert.equal(
+    parseDailySummary(JSON.stringify({ categories: [{ activity: "Build", category: "Unassigned" }, { activity: "Review", category: "WRAP / Programming" }] }), activities, harvestCategories),
+    undefined,
+  )
+  const longHarvestCategory = "Project ".repeat(12) + "/ Task"
+  assert.ok(parseDailySummary(
+    JSON.stringify({ categories: [{ activity: "Build", category: longHarvestCategory }, { activity: "Review", category: longHarvestCategory }] }),
+    activities,
+    [longHarvestCategory],
+  ))
   const manyActivities = Array.from({ length: 65 }, (_, index) => `Activity ${index + 1}`)
   const highCardinality = parseDailySummary(JSON.stringify({ categories: manyActivities.map((activity, index) => ({ activity, category: ["Coordination", "Implementation", "Review", "Design", "Quality"][index % 5] })) }), manyActivities)
   assert.equal(highCardinality.categories.size, 65)
@@ -334,14 +351,13 @@ test("parses quoted explicit timesheet arguments", () => {
   assert.equal(parseCommandArguments("timesheet today --project 'WRAP"), null)
 })
 
-test("renders local Project Time without calling Harvest", async () => {
+test("renders a review-only Harvest draft from local Project Time", async () => {
   const tools = []
   const commands = []
   const calls = []
   const messages = []
   const notifications = []
   const transformLoads = []
-  const entryLoads = []
   let summaries = 0
   harvestTimeExtension({
     zod: { z },
@@ -356,31 +372,6 @@ test("renders local Project Time without calling Harvest", async () => {
       assert.equal(logPath, "/tmp/project-time.json")
       return ["Ice Fog Analytics", "wrap"]
     },
-    loadProjectTimeEntries: async options => {
-      entryLoads.push(options)
-      return {
-        sourceKind: "human_active",
-          entries: [{
-          spentDate: "2026-07-20",
-          project: "WRAP (YG - SIS)",
-          task: "Programming",
-          hours: 6.75,
-          notes: "OMP Project Time: wrap (repo)",
-        }, {
-          spentDate: "2026-07-20",
-          project: "WRAP (YG - SIS)",
-          task: "Programming",
-          hours: 0.25,
-          notes: "OMP Project Time: wrap's; cleanup",
-        }, {
-          spentDate: "2026-07-20",
-          project: "WRAP (YG - SIS)",
-          task: "Programming",
-          hours: 0.1,
-          notes: "OMP Project Time: wrapzzz\n```",
-        }],
-      }
-    },
     loadProjectTimeTransform: async options => {
       transformLoads.push(options)
       return {
@@ -390,22 +381,37 @@ test("renders local Project Time without calling Harvest", async () => {
         ],
         groups: [
           { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Fix test suite", milliseconds: 24_040_000 },
-          { spentDate: "2026-07-20", sourceKind: "agent_turn_elapsed", activity: "Fix test suite", milliseconds: 1_789_000 },
           { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Prototype template v3 UI", milliseconds: 300_000 },
         ],
       }
     },
-    generateDailySummary: async records => {
+    generateDailySummary: async (records, ctx, categoryOptions) => {
       assert.deepEqual(records, [
         { activity: "Fix test suite", durationMilliseconds: 24_040_000 },
         { activity: "Prototype template v3 UI", durationMilliseconds: 300_000 },
       ])
+      assert.deepEqual(categoryOptions, ["WRAP (YG - SIS) / Programming", "WRAP Support (YG - SIS) / Support"])
       return summaries++ === 0
-        ? { categories: new Map([["Fix test suite", "Validation"], ["Prototype template v3 UI", "Design"]]), summary: "- Fixed the test suite." }
+        ? { categories: new Map([
+          ["Fix test suite", "WRAP (YG - SIS) / Programming"],
+          ["Prototype template v3 UI", "WRAP Support (YG - SIS) / Support"],
+        ]) }
         : undefined
     },
     run: async (...args) => {
       calls.push(args)
+      if (args[1][0] === "mapping-data") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            assignments: [
+              { project: { name: "WRAP (YG - SIS)" }, task: { name: "Programming" } },
+              { project: { name: "WRAP Support (YG - SIS)" }, task: { name: "Support" } },
+            ],
+          }),
+          stderr: "",
+        }
+      }
       return { code: 0, stdout: "CLI output", stderr: "" }
     },
   })
@@ -431,57 +437,14 @@ test("renders local Project Time without calling Harvest", async () => {
     mappings: new Map(),
     logPath: "/tmp/project-time.json",
   }])
-  assert.deepEqual(entryLoads, [{
-    from: "2026-07-20",
-    to: "2026-07-20",
-    mappings: new Map([["wrap", { project: "WRAP (YG - SIS)", task: "Programming" }]]),
-    logPath: "/tmp/project-time.json",
-  }])
-
-  const draftFence = "````"
-  const draftCommands = [
-    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 6.75 --notes 'OMP Project Time: wrap (repo)' --dry-run",
-    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 0.25 --notes 'OMP Project Time: wrap'\"'\"'s; cleanup' --dry-run",
-    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 0.1 --notes 'OMP Project Time: wrapzzz\n```' --dry-run",
-  ]
-  const draftBlock = `${draftFence}sh\n${draftCommands.join("\n")}\n${draftFence}`
-  assert.equal(
-    messages[0].message.content,
-    [
-      "wrap · Mon, Jul 20 · 6:45",
-      "Source: local OMP Project Time (not Harvest)",
-      "Harvest destination: WRAP (YG - SIS) / Programming",
-      "",
-      "AI activity summary (from local records)",
-      "- Validation · 6:40",
-      "- Design · 0:05",
-      "",
-      "Worklog draft (generated from local records)",
-      "- Fixed the test suite.",
-      "remove --dry-run to create entries",
-      draftBlock,
-    ].join("\n"),
-  )
-  await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
-  assert.equal(
-    messages[1].message.content,
-    [
-      "wrap · Mon, Jul 20 · 6:45",
-      "Source: local OMP Project Time (not Harvest)",
-      "Harvest destination: WRAP (YG - SIS) / Programming",
-      "",
-      "Activity summary",
-      "- Fix test suite · 6:40",
-      "- Prototype template v3 UI · 0:05",
-      "",
-      "Worklog draft (generated from local records)",
-      "remove --dry-run to create entries",
-      draftBlock,
-    ].join("\n"),
-  )
+  assert.deepEqual(calls, [[
+    "harvest-worklog",
+    ["mapping-data", "2026-07-20", "2026-07-20"],
+    { cwd: "/tmp" },
+  ]])
+  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest draft (review only; nothing written)\n\nWRAP (YG - SIS)\nProgramming\n- Fix test suite\n6:40\nWRAP Support (YG - SIS)\nSupport\n- Prototype template v3 UI\n0:05\n\nTotal: 6:45")
   await command.handler("time-off --help", { cwd: "/tmp", ui })
-  assert.equal(calls.length, 0)
-
+  assert.equal(calls.length, 1)
   assert.deepEqual(
     tools.map(tool => tool.name),
     [

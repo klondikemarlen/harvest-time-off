@@ -314,14 +314,25 @@ export function resolveProjectTimeDate(value, today = new Date()) {
   }
   return value
 }
-export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, categories, summary }) {
+export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, categories, summary, harvestAssignments, harvestError }) {
   const [year, month, day] = spentDate.split("-").map(Number)
   const groups = plan.groups.filter(group => group.spentDate === spentDate && group.sourceKind === "human_active")
   const heading = `${project} · ${formatShortDate(new Date(year, month - 1, day))} · ${formatDayTotal(groups.reduce((total, group) => total + group.milliseconds, 0))}`
   const provenance = [
     "Source: local OMP Project Time (not Harvest)",
-    ...(mapping ? [`Harvest destination: ${mapping.project} / ${mapping.task}`] : []),
+    ...(harvestAssignments === undefined && mapping ? [`Harvest destination: ${mapping.project} / ${mapping.task}`] : []),
   ]
+  if (harvestAssignments !== undefined) {
+    return formatHarvestDraft(heading, provenance, groups, {
+      categories,
+      harvestAssignments,
+      harvestError,
+      mapping,
+      project,
+      spentDate,
+    })
+  }
+
   const activities = new Map()
   for (const group of groups) {
     const activity = group.activity || "Unlabelled"
@@ -346,6 +357,72 @@ export function formatProjectTimeTimesheet(plan, { project, spentDate, mapping, 
     ...(hidden.length > 0 ? [`- ${remainder} · ${formatDayTotal(hidden.reduce((total, summary) => total + summary.milliseconds, 0))}`] : []),
     ...(summary ? ["", "Worklog draft (generated from local records)", summary] : []),
   ].join("\n")
+}
+
+function formatHarvestDraft(heading, provenance, groups, { categories, harvestAssignments, harvestError, mapping, project, spentDate }) {
+  const assignments = new Map()
+  for (const assignment of harvestAssignments) {
+    const harvestProject = assignment?.project?.name
+    const harvestTask = assignment?.task?.name
+    if (typeof harvestProject === "string" && harvestProject.trim() && typeof harvestTask === "string" && harvestTask.trim()) {
+      assignments.set(`${harvestProject} / ${harvestTask}`, { project: harvestProject, task: harvestTask })
+    }
+  }
+
+  const destinations = new Map()
+  const unmapped = new Map()
+  for (const group of groups) {
+    const activity = group.activity || "Unlabelled"
+    const category = categories?.get(activity)
+    const destination = assignments.get(category) ?? mapping
+    const bucket = destination ? destinations : unmapped
+    const key = destination ? `${destination.project} / ${destination.task}` : activity
+    const entry = bucket.get(key) ?? {
+      activities: new Map(),
+      milliseconds: 0,
+      ...(destination ?? {}),
+    }
+    entry.milliseconds += group.milliseconds
+    entry.activities.set(activity, (entry.activities.get(activity) ?? 0) + group.milliseconds)
+    bucket.set(key, entry)
+  }
+
+  const sections = []
+  for (const entry of [...destinations.values()].sort(compareDraftEntries)) {
+    sections.push(
+      entry.project,
+      entry.task,
+      ...[...entry.activities.keys()].sort((left, right) => left.localeCompare(right)).map(activity => `- ${activity}`),
+      formatDayTotal(entry.milliseconds),
+    )
+  }
+  if (unmapped.size > 0) {
+    const unmappedMilliseconds = [...unmapped.values()].reduce((total, entry) => total + entry.milliseconds, 0)
+    sections.push(
+      "Harvest destination not configured",
+      ...[...unmapped.values()].sort(compareDraftEntries).flatMap(entry => [...entry.activities.keys()].sort((left, right) => left.localeCompare(right)).map(activity => `- ${activity}`)),
+      `Local total: ${formatDayTotal(unmappedMilliseconds)}`,
+      `Configure a Harvest project/task mapping or category assignment for ${project} on ${spentDate}.`,
+    )
+  }
+  if (sections.length === 0) {
+    sections.push(`No local Project Time sessions found for ${project} on ${spentDate}.`)
+  }
+
+  const total = [...destinations.values(), ...unmapped.values()].reduce((sum, entry) => sum + entry.milliseconds, 0)
+  return [
+    heading,
+    ...provenance,
+    "Harvest draft (review only; nothing written)",
+    ...(harvestError ? ["Harvest categories unavailable; showing local activities without inferred destinations.", `Harvest lookup: ${harvestError}`] : []),
+    "",
+    ...sections,
+    ...(total > 0 ? ["", `Total: ${formatDayTotal(total)}`] : []),
+  ].join("\n")
+}
+
+function compareDraftEntries(left, right) {
+  return right.milliseconds - left.milliseconds || String(left.project ?? "").localeCompare(String(right.project ?? "")) || String(left.task ?? "").localeCompare(String(right.task ?? ""))
 }
 
 function formatShortDate(date) {

@@ -64,6 +64,58 @@ test("labels local activity data and separate Harvest destination", () => {
   )
 })
 
+test("renders a review-only Harvest-shaped draft grouped by suggested destinations", () => {
+  const plan = {
+    groups: [
+      { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Support workflow", milliseconds: 7_200_000 },
+      { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Fix tests", milliseconds: 3_600_000 },
+      { spentDate: "2026-07-20", sourceKind: "human_active", activity: "Support QA", milliseconds: 1_800_000 },
+    ],
+  }
+  assert.equal(
+    formatProjectTimeTimesheet(plan, {
+      project: "wrap",
+      spentDate: "2026-07-20",
+      categories: new Map([
+        ["Support workflow", "WRAP Support / Support"],
+        ["Fix tests", "WRAP / Programming"],
+        ["Support QA", "WRAP Support / Support"],
+      ]),
+      harvestAssignments: [
+        { project: { name: "WRAP Support" }, task: { name: "Support" } },
+        { project: { name: "WRAP" }, task: { name: "Programming" } },
+      ],
+    }),
+    "wrap · Mon, Jul 20 · 3:30\nSource: local OMP Project Time (not Harvest)\nHarvest draft (review only; nothing written)\n\nWRAP Support\nSupport\n- Support QA\n- Support workflow\n2:30\nWRAP\nProgramming\n- Fix tests\n1:00\n\nTotal: 3:30",
+  )
+})
+
+test("keeps activities visible when no Harvest destination is configured", () => {
+  assert.equal(
+    formatProjectTimeTimesheet(
+      { groups: [{ spentDate: "2026-07-20", sourceKind: "human_active", activity: "Unassigned work", milliseconds: 1_200_000 }] },
+      { project: "wrap", spentDate: "2026-07-20", harvestAssignments: [] },
+    ),
+    "wrap · Mon, Jul 20 · 0:20\nSource: local OMP Project Time (not Harvest)\nHarvest draft (review only; nothing written)\n\nHarvest destination not configured\n- Unassigned work\nLocal total: 0:20\nConfigure a Harvest project/task mapping or category assignment for wrap on 2026-07-20.\n\nTotal: 0:20",
+  )
+})
+
+
+test("keeps configured destinations when Harvest category lookup fails", () => {
+  assert.match(
+    formatProjectTimeTimesheet(
+      { groups: [{ spentDate: "2026-07-20", sourceKind: "human_active", activity: "Configured work", milliseconds: 1_200_000 }] },
+      {
+        project: "wrap",
+        spentDate: "2026-07-20",
+        mapping: { project: "WRAP", task: "Programming" },
+        harvestAssignments: [],
+        harvestError: "Harvest unavailable",
+      },
+    ),
+    /Harvest categories unavailable[\s\S]*WRAP\nProgramming[\s\S]*- Configured work[\s\S]*Total: 0:20/,
+  )
+})
 test("sums exact local durations within AI activity categories", () => {
   const groups = [
     { activity: "Validate workflow", milliseconds: 1_200_000 },
