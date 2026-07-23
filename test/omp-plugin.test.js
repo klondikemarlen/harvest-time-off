@@ -340,7 +340,8 @@ test("renders local Project Time without calling Harvest", async () => {
   const calls = []
   const messages = []
   const notifications = []
-  const loads = []
+  const transformLoads = []
+  const entryLoads = []
   let summaries = 0
   harvestTimeExtension({
     zod: { z },
@@ -355,8 +356,33 @@ test("renders local Project Time without calling Harvest", async () => {
       assert.equal(logPath, "/tmp/project-time.json")
       return ["Ice Fog Analytics", "wrap"]
     },
+    loadProjectTimeEntries: async options => {
+      entryLoads.push(options)
+      return {
+        sourceKind: "human_active",
+          entries: [{
+          spentDate: "2026-07-20",
+          project: "WRAP (YG - SIS)",
+          task: "Programming",
+          hours: 6.75,
+          notes: "OMP Project Time: wrap (repo)",
+        }, {
+          spentDate: "2026-07-20",
+          project: "WRAP (YG - SIS)",
+          task: "Programming",
+          hours: 0.25,
+          notes: "OMP Project Time: wrap's; cleanup",
+        }, {
+          spentDate: "2026-07-20",
+          project: "WRAP (YG - SIS)",
+          task: "Programming",
+          hours: 0.1,
+          notes: "OMP Project Time: wrapzzz\n```",
+        }],
+      }
+    },
     loadProjectTimeTransform: async options => {
-      loads.push(options)
+      transformLoads.push(options)
       return {
         summaryRecords: [
           { activity: "Fix test suite", durationMilliseconds: 24_040_000 },
@@ -398,19 +424,61 @@ test("renders local Project Time without calling Harvest", async () => {
   assert.match(notifications[0].message, /\/harvest-worklog timesheet DATE --project PROJECT/)
 
   await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
-  assert.deepEqual(loads, [{
+  assert.deepEqual(transformLoads, [{
     from: "2026-07-20",
     to: "2026-07-20",
     project: "wrap",
     mappings: new Map(),
     logPath: "/tmp/project-time.json",
   }])
-  assert.equal(calls.length, 0)
-  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest destination: WRAP (YG - SIS) / Programming\n\nAI activity summary (from local records)\n- Validation · 6:40\n- Design · 0:05\n\nWorklog draft (generated from local records)\n- Fixed the test suite.")
-  await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
-  assert.match(messages[1].message.content, /Source: local OMP Project Time \(not Harvest\)/)
-  assert.doesNotMatch(messages[1].message.content, /Worklog draft/)
+  assert.deepEqual(entryLoads, [{
+    from: "2026-07-20",
+    to: "2026-07-20",
+    mappings: new Map([["wrap", { project: "WRAP (YG - SIS)", task: "Programming" }]]),
+    logPath: "/tmp/project-time.json",
+  }])
 
+  const draftFence = "````"
+  const draftCommands = [
+    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 6.75 --notes 'OMP Project Time: wrap (repo)' --dry-run",
+    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 0.25 --notes 'OMP Project Time: wrap'\"'\"'s; cleanup' --dry-run",
+    "harvest-worklog work-entry 2026-07-20 --project 'WRAP (YG - SIS)' --task Programming --hours 0.1 --notes 'OMP Project Time: wrapzzz\n```' --dry-run",
+  ]
+  const draftBlock = `${draftFence}sh\n${draftCommands.join("\n")}\n${draftFence}`
+  assert.equal(
+    messages[0].message.content,
+    [
+      "wrap · Mon, Jul 20 · 6:45",
+      "Source: local OMP Project Time (not Harvest)",
+      "Harvest destination: WRAP (YG - SIS) / Programming",
+      "",
+      "AI activity summary (from local records)",
+      "- Validation · 6:40",
+      "- Design · 0:05",
+      "",
+      "Worklog draft (generated from local records)",
+      "- Fixed the test suite.",
+      "remove --dry-run to create entries",
+      draftBlock,
+    ].join("\n"),
+  )
+  await command.handler("timesheet 2026-07-20 --project wrap", { cwd: "/tmp", ui })
+  assert.equal(
+    messages[1].message.content,
+    [
+      "wrap · Mon, Jul 20 · 6:45",
+      "Source: local OMP Project Time (not Harvest)",
+      "Harvest destination: WRAP (YG - SIS) / Programming",
+      "",
+      "Activity summary",
+      "- Fix test suite · 6:40",
+      "- Prototype template v3 UI · 0:05",
+      "",
+      "Worklog draft (generated from local records)",
+      "remove --dry-run to create entries",
+      draftBlock,
+    ].join("\n"),
+  )
   await command.handler("time-off --help", { cwd: "/tmp", ui })
   assert.equal(calls.length, 0)
 

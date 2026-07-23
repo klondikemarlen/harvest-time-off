@@ -71,6 +71,29 @@ export function parseDailySummary(content, activities) {
   }
 }
 
+function formatShellArg(value) {
+  const token = String(value)
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(token)) return token
+  return `'${token.replace(/'/g, "'\"'\"'")}'`
+}
+
+function formatCommand(parts) {
+  return parts.map(formatShellArg).join(" ")
+}
+
+function formatWorklogDraftEntries(command, entries) {
+  if (entries.length === 0) return undefined
+  const preview = entries.map(entry => formatCommand([command, ...workEntryArguments(entry, true)]))
+  let fenceLength = 3
+  for (const line of preview) {
+    for (const match of line.match(/`+/g) ?? []) {
+      if (match.length >= fenceLength) fenceLength = match.length + 1
+    }
+  }
+  const fence = "`".repeat(fenceLength)
+  return [`${fence}sh`, ...preview, fence].join("\n")
+}
+
 export function timeOffArguments({
   from,
   to,
@@ -628,6 +651,7 @@ export default function harvestTimeExtension(pi, options = {}) {
   const projectTimeMappings = options.projectTimeMappings?.trim() || "{}"
   const projectTimeLogPath = options.projectTimeLogPath?.trim() || ""
   const loadTransform = options.loadProjectTimeTransform ?? loadProjectTimeTransform
+  const loadEntries = options.loadProjectTimeEntries ?? loadProjectTimeEntries
   const loadProjects = options.loadProjectTimeProjectNames ?? createProjectTimeProjectNamesLoader()
   const summarize = options.generateDailySummary ?? generateDailySummary
   pi.registerCommand("harvest-worklog", {
@@ -643,7 +667,16 @@ export default function harvestTimeExtension(pi, options = {}) {
       try {
         const spentDate = resolveProjectTimeDate(parsed.argv[1])
         const project = parsed.argv[3]
-        const mapping = parseProjectTimeMappings(projectTimeMappings).get(project)
+        const mappings = parseProjectTimeMappings(projectTimeMappings)
+        const mapping = mappings.get(project)
+        const draftPlan = mapping
+          ? await loadEntries({
+            from: spentDate,
+            to: spentDate,
+            mappings: new Map([[project, mapping]]),
+            logPath: projectTimeLogPath || undefined,
+          })
+          : null
         const plan = await loadTransform({
           from: spentDate,
           to: spentDate,
@@ -652,9 +685,17 @@ export default function harvestTimeExtension(pi, options = {}) {
           logPath: projectTimeLogPath || undefined,
         })
         const generated = await summarize(plan.summaryRecords ?? [], ctx)
+        const draft = draftPlan ? formatWorklogDraftEntries(command, draftPlan.entries) : undefined
+        const draftInstructions = draft ? `remove --dry-run to create entries\n${draft}` : undefined
+        const summary = draftInstructions
+          ? generated?.summary
+            ? `${generated.summary}\n${draftInstructions}`
+            : draftInstructions
+          : generated?.summary
+
         pi.sendMessage({
           customType: "harvest-worklog-timesheet",
-          content: formatProjectTimeTimesheet(plan, { project, spentDate, mapping, categories: generated?.categories, summary: generated?.summary }),
+          content: formatProjectTimeTimesheet(plan, { project, spentDate, mapping, categories: generated?.categories, summary }),
           display: true,
           attribution: "assistant",
         }, { triggerTurn: false })
