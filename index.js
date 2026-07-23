@@ -90,15 +90,34 @@ function classificationMappings(rawClassifications, activities, categoryOptions)
   if (categories.size !== activities.length || new Set(categories.values()).size > 5 || new Set(workstreams.values()).size > 8) return undefined
   return { categories, workstreams }
 }
+function workstreamMappings(rawWorkstreams, activities) {
+  const mappings = Array.isArray(rawWorkstreams)
+    ? rawWorkstreams
+    : rawWorkstreams && typeof rawWorkstreams === "object" && !Array.isArray(rawWorkstreams)
+      ? Object.entries(rawWorkstreams).map(([activity, workstream]) => ({ activity, workstream }))
+      : undefined
+  if (!mappings || mappings.length !== activities.length) return undefined
+  const workstreams = new Map()
+  for (const mapping of mappings) {
+    if (!mapping || typeof mapping !== "object" || Array.isArray(mapping) || typeof mapping.activity !== "string" || typeof mapping.workstream !== "string") return undefined
+    const activity = mapping.activity
+    const workstream = mapping.workstream.trim()
+    if (!activities.includes(activity) || workstreams.has(activity) || !workstream || workstream.length > 100 || /[\r\n]/.test(workstream)) return undefined
+    workstreams.set(activity, workstream)
+  }
+  if (workstreams.size !== activities.length || new Set(workstreams.values()).size > 8) return undefined
+  return workstreams
+}
 
 export function parseDailySummary(content, activities, categoryOptions = []) {
   try {
     const parsed = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""))
     const classification = classificationMappings(parsed.classifications, activities, categoryOptions)
-    if (categoryOptions.length > 0 && !classification) return undefined
+    const legacyWorkstreams = workstreamMappings(parsed.workstreams, activities)
+    if (categoryOptions.length > 0 && !classification && !legacyWorkstreams) return undefined
     const categories = classification?.categories ?? categoryMappings(parsed.categories, activities, categoryOptions)
     if (!categories) return undefined
-    const workstreams = classification?.workstreams
+    const workstreams = classification?.workstreams ?? legacyWorkstreams
     const worklog = Array.isArray(parsed.worklog)
       ? parsed.worklog.filter(bullet => typeof bullet === "string" && bullet.trim().length > 0 && bullet.length <= 500).slice(0, 4).map(bullet => `- ${bullet.trim().replace(/^-+\s*/, "")}`).join("\n")
       : undefined
