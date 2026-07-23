@@ -298,18 +298,54 @@ test("validates AI activity category responses", () => {
   assert.deepEqual([...fenced.categories], [["Build", "Implementation"], ["Review", "Review"]])
   const harvestCategories = ["WRAP / Programming", "WRAP Support / Support"]
   const harvestMapped = parseDailySummary(
-    JSON.stringify({ categories: [{ activity: "Build", category: "WRAP / Programming" }, { activity: "Review", category: "WRAP Support / Support" }] }),
+    JSON.stringify({
+      categories: [
+        { activity: "Build", category: "WRAP / Programming" },
+        { activity: "Review", category: "WRAP Support / Support" },
+      ],
+      workstreams: [
+        { activity: "Build", workstream: "Feature delivery" },
+        { activity: "Review", workstream: "Feature delivery" },
+      ],
+    }),
     activities,
     harvestCategories,
   )
   assert.deepEqual([...harvestMapped.categories], [["Build", "WRAP / Programming"], ["Review", "WRAP Support / Support"]])
+  assert.deepEqual([...harvestMapped.workstreams], [["Build", "Feature delivery"], ["Review", "Feature delivery"]])
+  assert.equal(
+    parseDailySummary(JSON.stringify({
+      categories: [
+        { activity: "Build", category: "WRAP / Programming" },
+        { activity: "Review", category: "WRAP Support / Support" },
+      ],
+      workstreams: [{ activity: "Build", workstream: "Feature delivery" }],
+    }), activities, harvestCategories),
+    undefined,
+  )
+  assert.equal(
+    parseDailySummary(JSON.stringify({
+      categories: [
+        { activity: "Build", category: "WRAP / Programming" },
+        { activity: "Review", category: "WRAP Support / Support" },
+      ],
+      workstreams: [
+        { activity: "Build", workstream: "Feature delivery\nunsafe" },
+        { activity: "Review", workstream: "Feature delivery" },
+      ],
+    }), activities, harvestCategories),
+    undefined,
+  )
   assert.equal(
     parseDailySummary(JSON.stringify({ categories: [{ activity: "Build", category: "Unassigned" }, { activity: "Review", category: "WRAP / Programming" }] }), activities, harvestCategories),
     undefined,
   )
   const longHarvestCategory = "Project ".repeat(12) + "/ Task"
   assert.ok(parseDailySummary(
-    JSON.stringify({ categories: [{ activity: "Build", category: longHarvestCategory }, { activity: "Review", category: longHarvestCategory }] }),
+    JSON.stringify({
+      categories: [{ activity: "Build", category: longHarvestCategory }, { activity: "Review", category: longHarvestCategory }],
+      workstreams: [{ activity: "Build", workstream: "Feature delivery" }, { activity: "Review", workstream: "Feature delivery" }],
+    }),
     activities,
     [longHarvestCategory],
   ))
@@ -392,10 +428,16 @@ test("renders a review-only Harvest draft from local Project Time", async () => 
       ])
       assert.deepEqual(categoryOptions, ["WRAP (YG - SIS) / Programming", "WRAP Support (YG - SIS) / Support"])
       return summaries++ === 0
-        ? { categories: new Map([
-          ["Fix test suite", "WRAP (YG - SIS) / Programming"],
-          ["Prototype template v3 UI", "WRAP Support (YG - SIS) / Support"],
-        ]) }
+        ? {
+          categories: new Map([
+            ["Fix test suite", "WRAP (YG - SIS) / Programming"],
+            ["Prototype template v3 UI", "WRAP Support (YG - SIS) / Support"],
+          ]),
+          workstreams: new Map([
+            ["Fix test suite", "Project test suite"],
+            ["Prototype template v3 UI", "Template v3 development"],
+          ]),
+        }
         : undefined
     },
     run: async (...args) => {
@@ -442,7 +484,7 @@ test("renders a review-only Harvest draft from local Project Time", async () => 
     ["mapping-data", "2026-07-20", "2026-07-20"],
     { cwd: "/tmp" },
   ]])
-  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest draft (review only; nothing written)\n\nWRAP (YG - SIS)\nProgramming\n- Fix test suite\n6:40\nWRAP Support (YG - SIS)\nSupport\n- Prototype template v3 UI\n0:05\n\nTotal: 6:45")
+  assert.equal(messages[0].message.content, "wrap · Mon, Jul 20 · 6:45\nSource: local OMP Project Time (not Harvest)\nHarvest draft (review only; nothing written)\n\nWRAP (YG - SIS)\nProgramming\n- Project test suite · 6:40\nTotal: 6:40\nWRAP Support (YG - SIS)\nSupport\n- Template v3 development · 0:05\nTotal: 0:05\n\nTotal: 6:45")
   await command.handler("time-off --help", { cwd: "/tmp", ui })
   assert.equal(calls.length, 1)
   assert.deepEqual(
