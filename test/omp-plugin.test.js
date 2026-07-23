@@ -303,6 +303,13 @@ test("validates AI activity category responses", () => {
     ],
   }), activities)
   assert.deepEqual([...compactWithoutHarvest.workstreams], [["Build", "Feature delivery"], ["Review", "Feature delivery"]])
+  const compactWithIds = parseDailySummary(JSON.stringify({
+    classifications: [
+      { id: "1", category: "Implementation", workstream: "Feature delivery" },
+      { id: "2", category: "Review", workstream: "Feature delivery" },
+    ],
+  }), activities)
+  assert.deepEqual([...compactWithIds.categories], [["Build", "Implementation"], ["Review", "Review"]])
   const harvestCategories = ["WRAP / Programming", "WRAP Support / Support"]
   const harvestMapped = parseDailySummary(
     JSON.stringify({
@@ -366,6 +373,12 @@ test("validates AI activity category responses", () => {
     activities,
     [longHarvestCategory],
   ))
+  const nineActivities = Array.from({ length: 9 }, (_, index) => `Work ${index + 1}`)
+  const nineWorkstreams = parseDailySummary(JSON.stringify({
+    categories: nineActivities.map(activity => ({ activity, category: "WRAP / Programming" })),
+    workstreams: nineActivities.map((activity, index) => ({ activity, workstream: `Stream ${index + 1}` })),
+  }), nineActivities, ["WRAP / Programming"])
+  assert.equal(nineWorkstreams.workstreams.size, 9)
   const manyActivities = Array.from({ length: 65 }, (_, index) => `Activity ${index + 1}`)
   const highCardinality = parseDailySummary(JSON.stringify({ categories: manyActivities.map((activity, index) => ({ activity, category: ["Coordination", "Implementation", "Review", "Design", "Quality"][index % 5] })) }), manyActivities)
   assert.equal(highCardinality.categories.size, 65)
